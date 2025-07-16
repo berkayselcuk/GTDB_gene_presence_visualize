@@ -96,3 +96,33 @@ export interface TooltipData {
   x: number;
   y: number;
 } 
+
+// ---------------------------------------------
+// Legacy / utility types used by DataProcessor
+// ---------------------------------------------
+
+// `Assembly` is the same as a GTDBRecord for our purposes
+export type Assembly = GTDBRecord;
+
+// Map of gene → count for a single assembly
+export interface GeneData {
+  [geneName: string]: number;
+}
+
+// Processed structure produced by DataProcessor
+export interface ProcessedData {
+  assemblies: Assembly[];
+  geneNames: string[];
+  matrix: number[][];
+  countMap: Map<string, GeneData>;
+  asmIndex: Map<string, number>;
+  geneIndex: Map<string, number>;
+}
+
+export interface CoordinateMap {
+  coordMap: Map<string, number>;
+  widthMap: Map<string, number>;
+}
+
+// Alias for backwards-compatibility: a taxonomic level string
+export type LineageLevel = TaxonomicLevel; 

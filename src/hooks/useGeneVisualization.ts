@@ -9,7 +9,19 @@ import type {
   DifferenceOptions
 } from '@/types/gene-visualization';
 
-const JSON_URL = '/GTDB214_lineage_ordered_custom_order.json';
+// List of available lineage JSON datasets shipped in the public/ folder.
+// NOTE: *Do not* prefix the file names with a leading slash so that the fetch
+// request is always resolved relative to the current deployment base path.
+// This prevents issues when the application is hosted under a sub-path (e.g.
+// GitHub Pages) where an absolute URL like "/file.json" would incorrectly
+// point to the domain root.
+const DATASETS = [
+  'GTDB214_lineage_ordered_custom_order.json',
+  'GTDB214_lineage_ordered.json',
+] as const;
+
+// Default dataset to load on first render
+const DEFAULT_DATASET = DATASETS[0];
 const ALL_LEVELS: TaxonomicLevel[] = ['phylum', 'class', 'order', 'family', 'genus'];
 const GOLDEN = 0.618033988749895;
 
@@ -37,6 +49,9 @@ export function useGeneVisualization() {
 
   const [containerWidth, setContainerWidth] = useState(1200);
 
+  // Currently selected dataset JSON file name
+  const [dataset, setDataset] = useState<string>(DEFAULT_DATASET);
+
   const colorCacheRef = useRef<{ [key: string]: d3.ScaleOrdinal<string, string> }>({});
   
   // Global color mapping to ensure consistent colors across all data changes
@@ -59,20 +74,21 @@ export function useGeneVisualization() {
     return globalColorMapRef.current[lineageName];
   }, [generatePastelColor]);
 
-  // Load GTDB data on mount
+  // Load GTDB data whenever the selected dataset changes
   useEffect(() => {
-    loadGTDBData();
-  }, []);
+    loadGTDBData(dataset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataset]);
 
   const onWidthChange = useCallback((width: number) => {
     console.log('Width change callback:', width);
     setContainerWidth(width);
   }, []);
 
-  const loadGTDBData = useCallback(async () => {
-    console.log('Loading GTDB data...');
+  const loadGTDBData = useCallback(async (fileName: string) => {
+    console.log('Loading GTDB data from', fileName);
     try {
-      const response = await fetch(JSON_URL);
+      const response = await fetch(fileName);
       const jsonData: GTDBRecord[] = await response.json();
       console.log('GTDB data loaded:', jsonData.length, 'records');
       
@@ -543,5 +559,8 @@ export function useGeneVisualization() {
     searchLineage,
     onWidthChange,
     getColorScale,
+    dataset,
+    datasets: DATASETS,
+    setDataset,
   };
 } 

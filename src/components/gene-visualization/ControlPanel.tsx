@@ -23,6 +23,11 @@ interface ControlPanelProps {
   onFilterAssemblies: () => void
   onFilterBySize: (level: TaxonomicLevel, threshold: number) => void
   mode: 'all' | 'display' | 'filters' | 'analysis'
+
+  // Dataset selection
+  datasetOptions: readonly string[]
+  selectedDataset: string
+  onDatasetChange: (dataset: string) => void
 }
 
 const allLevels: TaxonomicLevel[] = ['phylum', 'class', 'order', 'family', 'genus']
@@ -39,6 +44,9 @@ export function ControlPanel({
   onNormalizeLevel,
   onFilterAssemblies,
   onFilterBySize,
+  datasetOptions,
+  selectedDataset,
+  onDatasetChange,
 }: ControlPanelProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [diffGene1, setDiffGene1] = useState('')
@@ -83,6 +91,19 @@ export function ControlPanel({
       <div className="flex items-center gap-2 px-3 py-1 bg-gray-50 rounded border min-w-fit">
         <Upload className="w-4 h-4 text-blue-600" />
         <span className="text-sm font-medium">Load Data</span>
+        {/* Dataset selector */}
+        <Select value={selectedDataset} onValueChange={onDatasetChange}>
+          <SelectTrigger className="h-7 text-xs w-44">
+            <SelectValue placeholder="Dataset" />
+          </SelectTrigger>
+          <SelectContent>
+            {datasetOptions.map((file) => (
+              <SelectItem key={file} value={file} className="text-xs">
+                {file.replace(/\.json$/, '')}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button onClick={onLoadTSV} size="sm" className="text-xs px-2 py-1">Load TSV</Button>
       </div>
 

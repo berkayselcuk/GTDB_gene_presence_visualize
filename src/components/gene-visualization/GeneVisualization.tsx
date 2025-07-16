@@ -39,6 +39,9 @@ export function GeneVisualization() {
     searchLineage,
     onWidthChange,
     getColorScale,
+    dataset,
+    datasets,
+    setDataset,
   } = useGeneVisualization()
 
   const handleFileUpload = () => {
@@ -106,6 +109,9 @@ export function GeneVisualization() {
           onNormalizeLevel={setNormalizeLevel}
           onFilterAssemblies={filterAllZeroAssemblies}
           onFilterBySize={filterBySize}
+          datasetOptions={datasets}
+          selectedDataset={dataset}
+          onDatasetChange={setDataset}
           mode="all"
         />
       </div>
