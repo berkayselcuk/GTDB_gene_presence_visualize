@@ -133,12 +133,12 @@ export function GeneVisualization() {
           </div>
 
           {/* Visualization Area */}
-          <div className="flex-1 min-w-0 flex flex-col">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col relative">
+          <div className="flex-1 min-w-0 flex flex-col w-full">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col relative w-full">
               {/* Loading Overlay - positioned relative to visualization area */}
               <LoadingOverlay isLoading={state.isLoading} message={state.loadingMessage} />
               
-              <div className="p-3 flex flex-col">
+              <div className="p-3 flex flex-col w-full">
                 {/* Mapping Info */}
                 {state.totalInput > 0 && (
                   <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
@@ -160,7 +160,7 @@ export function GeneVisualization() {
                 )}
 
                 {/* Visualization */}
-                <div className="w-full overflow-x-auto">
+                <div className="w-full flex-1">
                   <VisualizationCanvas
                     data={state.raw}
                     selectedLevels={state.selectedLevels}

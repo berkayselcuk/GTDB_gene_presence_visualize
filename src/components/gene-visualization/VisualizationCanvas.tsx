@@ -92,29 +92,50 @@ export function VisualizationCanvas({
     height: number;
   } | null>(null);
 
-  // Resize observer to detect container width changes
+  // Enhanced ResizeObserver with improved responsiveness
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const container = containerRef.current;
+    
+    const updateWidth = (newWidth: number) => {
+      if (newWidth > 0 && Math.abs(newWidth - containerWidth) > 1) { // Only update if significant change
+        console.log('ResizeObserver detected width change:', containerWidth, '->', newWidth);
+        setContainerWidth(newWidth);
+        onWidthChange?.(newWidth);
+      }
+    };
+
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const newWidth = entry.contentRect.width;
-        console.log('ResizeObserver detected width:', newWidth);
-        if (newWidth > 0 && newWidth !== containerWidth) {
-          setContainerWidth(newWidth);
-          onWidthChange?.(newWidth);
+        // Use borderBoxSize if available for more accurate measurements
+        let newWidth: number;
+        if (entry.borderBoxSize && entry.borderBoxSize.length > 0) {
+          newWidth = entry.borderBoxSize[0].inlineSize;
+        } else {
+          newWidth = entry.contentRect.width;
         }
+        updateWidth(newWidth);
       }
     });
 
-    resizeObserver.observe(containerRef.current);
+    resizeObserver.observe(container);
+
+    // Also listen to window resize as a fallback
+    const handleWindowResize = () => {
+      const rect = container.getBoundingClientRect();
+      updateWidth(rect.width);
+    };
+    
+    window.addEventListener('resize', handleWindowResize);
 
     return () => {
       resizeObserver.disconnect();
+      window.removeEventListener('resize', handleWindowResize);
     };
   }, [containerWidth, onWidthChange]);
 
-  // Initial width detection with multiple attempts
+  // Enhanced initial width detection with better timing
   useEffect(() => {
     const detectWidth = () => {
       if (containerRef.current) {
@@ -129,18 +150,36 @@ export function VisualizationCanvas({
       return false;
     };
 
-    // Try immediate detection
+    // Multiple detection attempts with different timing strategies
+    const timeouts: NodeJS.Timeout[] = [];
+    
+    // Immediate attempt
     if (!detectWidth()) {
-      // If failed, try after a delay
-      const timeout1 = setTimeout(() => {
+      // Quick retry (useful for initial render)
+      timeouts.push(setTimeout(() => {
         if (!detectWidth()) {
-          // If still failed, try after a longer delay
-          const timeout2 = setTimeout(() => {
-            detectWidth();
-          }, 500);
+          // Medium delay (useful after DOM updates)
+          timeouts.push(setTimeout(() => {
+            if (!detectWidth()) {
+              // Longer delay (fallback for slow rendering)
+              timeouts.push(setTimeout(() => {
+                detectWidth();
+              }, 1000));
+            }
+          }, 200));
         }
-      }, 100);
+      }, 50));
     }
+
+    // Also detect width on next animation frame (good for React rendering)
+    const rafId = requestAnimationFrame(() => {
+      detectWidth();
+    });
+
+    return () => {
+      timeouts.forEach(clearTimeout);
+      cancelAnimationFrame(rafId);
+    };
   }, [onWidthChange]);
 
   useEffect(() => {
@@ -599,21 +638,22 @@ export function VisualizationCanvas({
       </div>
 
       {/* Visualization */}
-      <Card>
-        <CardContent className="p-0">
+      <Card className="w-full">
+        <CardContent className="p-0 w-full">
           <div 
             ref={containerRef}
-            className="relative bg-white rounded-lg overflow-hidden w-full min-h-[200px]"
+            className="relative bg-white rounded-lg overflow-hidden w-full min-h-[200px] flex-1"
+            style={{ maxWidth: '100%' }}
           >
             <svg 
               ref={svgRef} 
-              className="w-full h-auto block min-h-[200px]"
-              style={{ background: 'transparent', maxWidth: '100%' }}
+              className="w-full h-auto block min-h-[200px] max-w-full"
+              style={{ background: 'transparent', width: '100%', height: 'auto' }}
             />
             <canvas 
               ref={canvasRef} 
-              className="absolute top-0 left-0"
-              style={{ width: '100%', height: 'auto', pointerEvents: 'none' }}
+              className="absolute top-0 left-0 max-w-full"
+              style={{ width: '100%', height: 'auto', pointerEvents: 'none', maxWidth: '100%' }}
             />
             <Tooltip 
               isVisible={tooltip.isVisible}
