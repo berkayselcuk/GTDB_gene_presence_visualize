@@ -1,11 +1,11 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import * as d3 from 'd3';
+import LineageAutocomplete from '@/components/LineageAutocomplete';
 import type { 
   GTDBRecord, 
   GeneCountData, 
   VisualizationState, 
   TaxonomicLevel, 
-  FilterOptions,
   DifferenceOptions
 } from '@/types/gene-visualization';
 
@@ -16,6 +16,8 @@ import type {
 // GitHub Pages) where an absolute URL like "/file.json" would incorrectly
 // point to the domain root.
 const DATASETS = [
+  'GTDB214_lineage_ordered_custom_order_43genes_0.5cov.json',
+  'GTDB214_lineage_ordered_custom_order_43genes.json',
   'GTDB214_lineage_ordered_custom_order.json',
   'GTDB214_lineage_ordered.json',
 ] as const;
@@ -48,6 +50,8 @@ export function useGeneVisualization() {
   });
 
   const [containerWidth, setContainerWidth] = useState(1200);
+  // for our new autocomplete component
+  const [lineageOptions, setLineageOptions] = useState<string[]>([]);
 
   // Currently selected dataset JSON file name
   const [dataset, setDataset] = useState<string>(DEFAULT_DATASET);
@@ -100,6 +104,11 @@ export function useGeneVisualization() {
         asmCount: jsonData.length,
         asmIndex: new Map(jsonData.map((d, i) => [d.assembly, i])),
       }));
+      // derive unique lineage strings across all taxonomic levels
+      const options = Array.from(
+        new Set(jsonData.flatMap(d => ALL_LEVELS.map(l => d[l])))
+      ).sort();
+      setLineageOptions(options);
     } catch (error) {
       console.error('Error loading GTDB data:', error);
       alert('Error loading GTDB data: ' + error);
@@ -127,7 +136,7 @@ export function useGeneVisualization() {
         const countMap = new Map<string, GeneCountData>();
 
         // Process TSV data
-        rows.forEach((rowStr, index) => {
+        rows.forEach((rowStr) => {
           const row = rowStr.split('\t');
           const asm = row[0];
           if (!prev.asmIndex.has(asm)) return;
@@ -545,6 +554,7 @@ export function useGeneVisualization() {
 
   return {
     state,
+    lineageOptions,            // expose for consumption
     loadTSVData,
     setSelectedLevels,
     setNormalizeLevel,
@@ -557,6 +567,13 @@ export function useGeneVisualization() {
     addDifferenceVisualization,
     filterAllZeroAssemblies,
     searchLineage,
+    /** A ready‑made React input you can drop into your JSX */
+    SearchLineageInput: (props: React.InputHTMLAttributes<HTMLInputElement>) => 
+      React.createElement(LineageAutocomplete, {
+        suggestions: lineageOptions,
+        onSelect: (value: string) => searchLineage(value),
+        placeholder: props.placeholder
+      }),
     onWidthChange,
     getColorScale,
     dataset,

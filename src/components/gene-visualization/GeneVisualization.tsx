@@ -37,6 +37,7 @@ export function GeneVisualization() {
     addDifferenceVisualization,
     filterAllZeroAssemblies,
     searchLineage,
+    SearchLineageInput,
     onWidthChange,
     getColorScale,
     dataset,
@@ -112,6 +113,7 @@ export function GeneVisualization() {
           datasetOptions={datasets}
           selectedDataset={dataset}
           onDatasetChange={setDataset}
+          SearchLineageInput={SearchLineageInput}
           mode="all"
         />
       </div>

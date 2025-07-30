@@ -40,9 +40,9 @@ function Tooltip({ isVisible, x, y, level, category, count }: TooltipProps) {
     <div 
       className="absolute pointer-events-none bg-gray-900 text-white text-xs rounded px-2 py-1 shadow-lg z-20 whitespace-nowrap"
       style={{ 
-        left: `${x + 12}px`, 
+        left: `${x - 12}px`, 
         top: `${y + 12}px`,
-        transform: 'translate(0, -100%)' // Position above cursor
+        transform: 'translate(-100%, 0)' // Position to the left of cursor
       }}
     >
       <div className="font-semibold">{category}</div>

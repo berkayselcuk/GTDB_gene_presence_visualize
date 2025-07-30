@@ -28,6 +28,9 @@ interface ControlPanelProps {
   datasetOptions: readonly string[]
   selectedDataset: string
   onDatasetChange: (dataset: string) => void
+  
+  // Autocomplete component
+  SearchLineageInput: (props: React.InputHTMLAttributes<HTMLInputElement>) => React.ReactElement
 }
 
 const allLevels: TaxonomicLevel[] = ['phylum', 'class', 'order', 'family', 'genus']
@@ -47,6 +50,7 @@ export function ControlPanel({
   datasetOptions,
   selectedDataset,
   onDatasetChange,
+  SearchLineageInput,
 }: ControlPanelProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [diffGene1, setDiffGene1] = useState('')
@@ -126,16 +130,12 @@ export function ControlPanel({
 
       {/* Search */}
       <div className="flex items-center gap-1 px-3 py-1 bg-gray-50 rounded border min-w-fit">
-        <Input
-          placeholder="Search lineage"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-          className="text-xs h-7 w-32"
-        />
-        <Button onClick={handleSearch} size="sm" variant="outline" className="px-2 h-7">
-          <Search className="w-3 h-3" />
-        </Button>
+        <div className="w-32">
+          <SearchLineageInput
+            placeholder="Search lineage"
+            className="text-xs h-7 w-full"
+          />
+        </div>
         <Button onClick={onResetFilter} size="sm" variant="outline" className="px-2 h-7">
           <RefreshCw className="w-3 h-3" />
         </Button>
