@@ -16,6 +16,8 @@ import type {
 // GitHub Pages) where an absolute URL like "/file.json" would incorrectly
 // point to the domain root.
 const DATASETS = [
+  'GTDB214_lineage_ordered_custom_order_36genes_alpha0.8_0.8cov.json',
+  'GTDB214_lineage_ordered_custom_order_36genes_alpha0.8_0.5cov.json',
   'GTDB214_lineage_ordered_custom_order_43genes_0.5cov.json',
   'GTDB214_lineage_ordered_custom_order_43genes.json',
   'GTDB214_lineage_ordered_custom_order.json',
