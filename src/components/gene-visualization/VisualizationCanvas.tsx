@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import * as d3 from 'd3';
-import { Upload, Database, MousePointer, Info } from 'lucide-react';
+import { Upload, Database, MousePointer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -23,17 +23,22 @@ interface VisualizationCanvasProps {
   getColorScale: (level: TaxonomicLevel, categories: string[]) => d3.ScaleOrdinal<string, string>;
 }
 
+export type VisualizationCanvasHandle = {
+  downloadSVG: () => void;
+};
+
 // Tooltip component
 interface TooltipProps {
   isVisible: boolean;
   x: number;
   y: number;
-  level: string;
+  // level kept for future but unused currently
+  // level: string;
   category: string;
   count: number;
 }
 
-function Tooltip({ isVisible, x, y, level, category, count }: TooltipProps) {
+function Tooltip({ isVisible, x, y, category, count }: TooltipProps) {
   if (!isVisible) return null;
   
   return (
@@ -51,7 +56,8 @@ function Tooltip({ isVisible, x, y, level, category, count }: TooltipProps) {
   );
 }
 
-export function VisualizationCanvas({
+export const VisualizationCanvas = forwardRef<VisualizationCanvasHandle, VisualizationCanvasProps>(function VisualizationCanvas(
+{
   data,
   selectedLevels,
   activeGenes,
@@ -64,11 +70,43 @@ export function VisualizationCanvas({
   onLineageClick,
   onWidthChange,
   getColorScale,
-}: VisualizationCanvasProps) {
+}: VisualizationCanvasProps,
+ref
+) {
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(1200);
+  const [lastSvgHeight, setLastSvgHeight] = useState(0);
+
+  const downloadSVG = useCallback(() => {
+    if (!svgRef.current) return;
+    const original = svgRef.current;
+    const clone = original.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    const canvas = canvasRef.current;
+    if (canvas && canvas.width > 0 && canvas.height > 0) {
+      const dataUrl = canvas.toDataURL('image/png');
+      const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+      img.setAttribute('href', dataUrl);
+      img.setAttribute('x', '0');
+      img.setAttribute('y', '0');
+      img.setAttribute('width', String(containerWidth));
+      img.setAttribute('height', String(lastSvgHeight || canvas.getBoundingClientRect().height));
+      clone.insertBefore(img, clone.firstChild);
+    }
+    const serializer = new XMLSerializer();
+    const svgString = serializer.serializeToString(clone);
+    const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'gene-visualization.svg';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [containerWidth, lastSvgHeight]);
   const [tooltip, setTooltip] = useState<{
     isVisible: boolean;
     x: number;
@@ -208,8 +246,8 @@ export function VisualizationCanvas({
     // Clear previous visualization
     svg.selectAll('*').remove();
 
-    // Constants - use consistent margins with buildLayout
-    const MARGINS = { top: 40, right: 20, bottom: 40, left: 140 };
+    // Constants - use consistent margins with buildLayout (tighter)
+    const MARGINS = { top: 20, right: 16, bottom: 24, left: 100 };
     
     // Use the full container width minus only the left margin for the plot area
     // The coordMap and widthMap already account for the proper spacing
@@ -224,12 +262,11 @@ export function VisualizationCanvas({
       return;
     }
 
-    const LEVEL_HEIGHT = 28;
+    const LEVEL_HEIGHT = 21; // ~25% smaller
     const INNER_PAD = 2;
-    const RUG_HEIGHT = 14;
-    const RUG_PAD = 4;
-    const BASE_GAP = 20;
-    const GOLDEN = 0.618033988749895;
+    const RUG_HEIGHT = 10; // ~25% smaller
+    const RUG_PAD = 3; // ~25% smaller
+    const BASE_GAP = 15; // ~25% smaller
 
     // Use the color scale function passed as prop (already has pastel colors and stable mapping)
 
@@ -244,6 +281,7 @@ export function VisualizationCanvas({
        .attr('height', svgHeight);
     
     console.log('SVG dimensions set:', { width: containerWidth, height: svgHeight });
+    setLastSvgHeight(svgHeight);
 
     const plot = svg.append('g')
       .attr('transform', `translate(${MARGINS.left},${MARGINS.top})`);
@@ -298,7 +336,7 @@ export function VisualizationCanvas({
         .on('click', (event, d) => {
           onLineageClick(level, d.cat);
         })
-        .on('mouseover', (event, d) => {
+        .on('mouseover', (e: MouseEvent, d) => {
           // Set highlight rectangle
           const startX = coordMap.get(assemblies[d.start]) || 0;
           const endX = coordMap.get(assemblies[d.end]) || 0;
@@ -313,40 +351,40 @@ export function VisualizationCanvas({
           });
           
           const containerRect = containerRef.current?.getBoundingClientRect();
-          if (containerRect) {
+          if (containerRect && e) {
             setTooltip({
               isVisible: true,
-              x: event.clientX - containerRect.left,
-              y: event.clientY - containerRect.top,
+              x: e.clientX - containerRect.left,
+              y: e.clientY - containerRect.top,
               level: level,
               category: d.cat,
               count: counts[level].get(d.cat) || 0,
             });
           }
         })
-        .on('mousemove', (event) => {
+        .on('mousemove', (evt: MouseEvent) => {
           const containerRect = containerRef.current?.getBoundingClientRect();
           if (containerRect) {
             setTooltip(prev => ({
               ...prev,
-              x: event.clientX - containerRect.left,
-              y: event.clientY - containerRect.top,
+              x: evt.clientX - containerRect.left,
+              y: evt.clientY - containerRect.top,
             }));
           }
         })
-        .on('mouseout', (event) => {
+        .on('mouseout', () => {
           setHighlightedRect(null);
           setTooltip(prev => ({ ...prev, isVisible: false }));
         });
 
       // Add level label
       g.append('text')
-        .attr('x', -10)
+        .attr('x', -6)
         .attr('y', LEVEL_HEIGHT / 2)
         .attr('dy', '.35em')
         .attr('text-anchor', 'end')
         .text(level)
-        .style('font-size', '13px')
+        .style('font-size', '10px')
         .style('font-weight', '500')
         .style('fill', '#374151');
     });
@@ -361,12 +399,12 @@ export function VisualizationCanvas({
         
         // Add gene label (keep in SVG for easy text rendering)
         rugLabels.append('text')
-          .attr('x', -10)
+          .attr('x', -6)
           .attr('y', y + RUG_HEIGHT / 2)
           .attr('dy', '.35em')
           .attr('text-anchor', 'end')
           .text(gene.replace(/_count$/, ''))
-          .style('font-size', '12px')
+          .style('font-size', '9px')
           .style('font-weight', '500')
           .style('fill', gene.includes('-') || gene.includes('>') ? '#7c3aed' : '#374151');
       });
@@ -386,8 +424,8 @@ export function VisualizationCanvas({
       containerWidth 
     });
     
-    if (!canvasRef.current || !matrix || activeGenes.length === 0 || containerWidth <= 0) {
-      console.log('Canvas early return - missing requirements');
+    if (!canvasRef.current || containerWidth <= 0) {
+      console.log('Canvas early return - no canvas or width');
       return;
     }
 
@@ -396,11 +434,11 @@ export function VisualizationCanvas({
     if (!context) return;
 
     // Constants matching SVG version
-    const MARGINS = { top: 40, right: 20, bottom: 40, left: 140 };
-    const LEVEL_HEIGHT = 28;
-    const RUG_HEIGHT = 14;
-    const RUG_PAD = 4;
-    const BASE_GAP = 20;
+    const MARGINS = { top: 20, right: 16, bottom: 24, left: 100 }; // keep in sync with SVG
+    const LEVEL_HEIGHT = 21; // ~25% smaller
+    const RUG_HEIGHT = 10; // ~25% smaller
+    const RUG_PAD = 3; // ~25% smaller
+    const BASE_GAP = 15; // ~25% smaller
 
     // Calculate canvas dimensions to match SVG exactly
     const svgHeight = MARGINS.top + 
@@ -414,6 +452,13 @@ export function VisualizationCanvas({
     canvas.height = svgHeight * dpr;
     canvas.style.width = `${containerWidth}px`;
     canvas.style.height = `${svgHeight}px`;
+    // Reset any previous transforms before scaling
+    // so repeated renders don't compound the scale
+    // Then apply the DPR scale for crisp lines
+    const anyContext = context as unknown as { setTransform?: (a: number, b: number, c: number, d: number, e: number, f: number) => void };
+    if (typeof anyContext.setTransform === 'function') {
+      anyContext.setTransform(1, 0, 0, 1, 0, 0);
+    }
     context.scale(dpr, dpr);
     
 
@@ -421,11 +466,17 @@ export function VisualizationCanvas({
     // Clear canvas
     context.clearRect(0, 0, canvas.width, canvas.height);
 
+    // If there is no matrix or no active genes, we've already cleared and resized
+    // the canvas, so we can stop here to ensure no stale rugs remain visible
+    if (!matrix || activeGenes.length === 0) {
+      return;
+    }
+
     // Draw gene rugs using Canvas
     const assemblies = data.map(d => d.assembly);
     const baseY = MARGINS.top + selectedLevels.length * LEVEL_HEIGHT + BASE_GAP;
 
-    let totalRectangles = 0;
+    // draw rugs per gene
     activeGenes.forEach((gene, geneIdx) => {
       const y = baseY + geneIdx * (RUG_HEIGHT + RUG_PAD);
       const geneIndexValue = geneIndex.get(gene);
@@ -435,8 +486,7 @@ export function VisualizationCanvas({
         context.fillStyle = '#1f2937';
         context.globalAlpha = 1.0;
         
-        let geneRectangles = 0;
-        assemblies.forEach((assembly, assemblyIdx) => {
+        assemblies.forEach((assembly) => {
           const asmIndexValue = asmIndex.get(assembly);
           if (asmIndexValue !== undefined && matrix[geneIndexValue * asmIndex.size + asmIndexValue]) {
             // Canvas coordinate system - need to add MARGINS.left since Canvas is absolute
@@ -446,8 +496,7 @@ export function VisualizationCanvas({
 
             
             context.fillRect(x, y, width, RUG_HEIGHT);
-            geneRectangles++;
-            totalRectangles++;
+            // drawn
           }
         });
         
@@ -459,12 +508,17 @@ export function VisualizationCanvas({
 
   }, [data, selectedLevels, activeGenes, matrix, coordMap, widthMap, asmIndex, geneIndex, containerWidth]);
 
+  // Expose a method to download current visualization as an SVG (embedding canvas as an image)
+  useImperativeHandle(ref, () => ({
+    downloadSVG,
+  }), [downloadSVG]);
+
   // Container interaction handling for gene rug tooltips
   useEffect(() => {
     if (!containerRef.current || !matrix || activeGenes.length === 0) return;
 
     const container = containerRef.current;
-    const MARGINS = { top: 40, right: 20, bottom: 40, left: 140 };
+    const MARGINS = { top: 20, right: 16, bottom: 24, left: 100 };
     const LEVEL_HEIGHT = 28;
     const RUG_HEIGHT = 14;
     const RUG_PAD = 4;
@@ -583,9 +637,8 @@ export function VisualizationCanvas({
       if (file) {
         const reader = new FileReader();
         reader.onload = (e) => {
-          const text = e.target?.result as string;
-          // You would need to call the loadTSVData function here
-          // For now, just trigger the file input
+          // Intentionally unused here; TSV handling is done upstream
+          void (e.target?.result as string);
         };
         reader.readAsText(file);
       }
@@ -629,6 +682,9 @@ export function VisualizationCanvas({
           </Badge>
         </div>
         <div className="flex items-center space-x-2">
+          <Button size="sm" onClick={downloadSVG}>
+            Download SVG
+          </Button>
           {activeGenes.length > 0 && (
             <Badge variant="secondary" className="bg-blue-100 text-blue-800">
               {activeGenes.length} genes visualized
@@ -659,7 +715,6 @@ export function VisualizationCanvas({
               isVisible={tooltip.isVisible}
               x={tooltip.x}
               y={tooltip.y}
-              level={tooltip.level}
               category={tooltip.category}
               count={tooltip.count}
             />
@@ -670,4 +725,4 @@ export function VisualizationCanvas({
 
     </div>
   );
-} 
+});

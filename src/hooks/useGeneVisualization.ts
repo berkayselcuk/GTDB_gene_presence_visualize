@@ -26,6 +26,15 @@ const DATASETS = [
 
 // Default dataset to load on first render
 const DEFAULT_DATASET = DATASETS[0];
+// Derive available GTDB taxonomy versions from dataset filenames (e.g., GTDB214)
+const TAXONOMY_VERSIONS = Array.from(
+  new Set(
+    DATASETS.map((f) => {
+      const match = f.match(/^GTDB(\d+)/);
+      return match ? match[1] : null;
+    }).filter(Boolean) as string[]
+  )
+).sort((a, b) => Number(b) - Number(a));
 const ALL_LEVELS: TaxonomicLevel[] = ['phylum', 'class', 'order', 'family', 'genus'];
 const GOLDEN = 0.618033988749895;
 
@@ -54,9 +63,13 @@ export function useGeneVisualization() {
   const [containerWidth, setContainerWidth] = useState(1200);
   // for our new autocomplete component
   const [lineageOptions, setLineageOptions] = useState<string[]>([]);
+  // Keep the last imported TSV text so we can recompute rugs when taxonomy changes
+  const lastTSVTextRef = useRef<string | null>(null);
+  // Track the first dataset load to avoid showing a taxonomy switching overlay on initial page load
+  const isFirstDatasetLoadRef = useRef<boolean>(true);
 
   // Currently selected dataset JSON file name
-  const [dataset, setDataset] = useState<string>(DEFAULT_DATASET);
+  const [dataset, setDataset] = useState<typeof DATASETS[number]>(DEFAULT_DATASET);
 
   const colorCacheRef = useRef<{ [key: string]: d3.ScaleOrdinal<string, string> }>({});
   
@@ -82,8 +95,46 @@ export function useGeneVisualization() {
 
   // Load GTDB data whenever the selected dataset changes
   useEffect(() => {
-    loadGTDBData(dataset);
+    let cancelled = false;
+
+    const run = async () => {
+      const showOverlay = !isFirstDatasetLoadRef.current || !!lastTSVTextRef.current;
+      if (showOverlay) {
+        // Show overlay to avoid flashing intermediate states
+        setState(prev => ({
+          ...prev,
+          isLoading: true,
+          loadingMessage: 'Switching taxonomy...'
+        }));
+      }
+
+      await loadGTDBData(dataset);
+
+      if (cancelled) return;
+
+      if (lastTSVTextRef.current) {
+        // Recompute rugs with the cached TSV; loadTSVData will set isLoading=false when done
+        loadTSVData(lastTSVTextRef.current);
+      } else {
+        if (showOverlay) {
+          setState(prev => ({ ...prev, isLoading: false, loadingMessage: '' }));
+        }
+      }
+
+      // After the first run, subsequent dataset changes are user-initiated
+      isFirstDatasetLoadRef.current = false;
+    };
+
+    run();
+
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataset]);
+
+  // Derived current taxonomy version from selected dataset
+  const taxonomy = React.useMemo(() => {
+    const m = dataset.match(/^GTDB(\d+)/);
+    return m ? m[1] : TAXONOMY_VERSIONS[0] || '214';
   }, [dataset]);
 
   const onWidthChange = useCallback((width: number) => {
@@ -118,6 +169,8 @@ export function useGeneVisualization() {
   }, []);
 
   const loadTSVData = useCallback((tsvText: string) => {
+    // Remember the latest TSV so we can re-apply it after taxonomy/dataset changes
+    lastTSVTextRef.current = tsvText;
     setState(prev => ({
       ...prev,
       isLoading: true,
@@ -171,6 +224,8 @@ export function useGeneVisualization() {
     }, 10);
   }, []);
 
+  // Removed separate reapply effect; handled inside dataset change effect above to avoid flashes
+
   const getColorScale = useCallback((level: TaxonomicLevel, categories: string[]) => {
     // Create a unique cache key that includes the level and sorted categories
     const cacheKey = `${level}_${categories.slice().sort().join('_')}`;
@@ -206,8 +261,8 @@ export function useGeneVisualization() {
         
         const coordMap = new Map<string, number>();
         const widthMap = new Map<string, number>();
-        // Use consistent margins with VisualizationCanvas
-        const MARGINS = { left: 140, right: 20 };
+        // Use consistent margins with VisualizationCanvas (smaller left margin)
+        const MARGINS = { left: 100, right: 16 };
         const totalW = containerWidth - MARGINS.left - MARGINS.right;
         
         console.log('Total width calculated:', totalW, 'from containerWidth:', containerWidth);
@@ -579,7 +634,10 @@ export function useGeneVisualization() {
     onWidthChange,
     getColorScale,
     dataset,
-    datasets: DATASETS,
+    // Expose all datasets; UI can filter/group by taxonomy
+    datasets: [...DATASETS] as Array<typeof DATASETS[number]>,
     setDataset,
+    taxonomyVersions: TAXONOMY_VERSIONS,
+    taxonomy,
   };
 } 

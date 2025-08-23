@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useState } from 'react'
 import { useGeneVisualization } from '@/hooks/useGeneVisualization'
 import { ControlPanel } from './ControlPanel'
 import { GeneSelectionSidebar } from './GeneSelectionSidebar'
@@ -12,7 +12,7 @@ function LoadingOverlay({ isLoading, message }: { isLoading: boolean; message: s
   if (!isLoading) return null;
   
   return (
-    <div className="absolute inset-0 backdrop-blur-sm bg-white/30 loading-overlay flex items-center justify-center z-10 rounded-lg">
+    <div className="absolute inset-0 backdrop-blur-sm bg-white loading-overlay flex items-center justify-center z-10 rounded-lg">
       <div className="bg-white/90 backdrop-blur-sm rounded-lg p-6 shadow-2xl flex flex-col items-center max-w-sm mx-4 border border-gray-300">
         <Loader2 className="w-8 h-8 text-blue-600 animate-spin-custom mb-4" />
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Processing...</h3>
@@ -23,6 +23,7 @@ function LoadingOverlay({ isLoading, message }: { isLoading: boolean; message: s
 }
 
 export function GeneVisualization() {
+  const [showSidebar, setShowSidebar] = useState(true)
   const {
     state,
     loadTSVData,
@@ -36,13 +37,13 @@ export function GeneVisualization() {
     togglePresence,
     addDifferenceVisualization,
     filterAllZeroAssemblies,
-    searchLineage,
     SearchLineageInput,
     onWidthChange,
     getColorScale,
     dataset,
     datasets,
     setDataset,
+    taxonomy,
   } = useGeneVisualization()
 
   const handleFileUpload = () => {
@@ -80,7 +81,7 @@ export function GeneVisualization() {
             <div className="hidden md:flex items-center space-x-6 text-sm text-gray-600">
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>GTDB v214: {state.asmCount.toLocaleString()} assemblies</span>
+                <span>GTDB v{taxonomy}: {state.asmCount.toLocaleString()} assemblies</span>
               </div>
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
@@ -97,12 +98,11 @@ export function GeneVisualization() {
       </header>
 
       {/* Controls */}
-      <div className="bg-white border-b border-gray-200 shadow-sm px-4 sm:px-6 lg:px-8 py-3">
+      <div className="bg-white border-b border-gray-200 shadow-sm px-3 sm:px-5 lg:px-6 py-2.5">
         <ControlPanel
           onLoadTSV={handleFileUpload}
           selectedLevels={state.selectedLevels}
           onSelectedLevelsChange={setSelectedLevels}
-          onSearch={searchLineage}
           onResetFilter={resetFilters}
           geneNames={state.geneNames}
           onAddDifference={(gene1, gene2, useCounts) => addDifferenceVisualization({ gene1, gene2, useCounts })}
@@ -112,27 +112,48 @@ export function GeneVisualization() {
           onFilterBySize={filterBySize}
           datasetOptions={datasets}
           selectedDataset={dataset}
-          onDatasetChange={setDataset}
+          onDatasetChange={(d) => setDataset(d as unknown as typeof datasets[number])}
           SearchLineageInput={SearchLineageInput}
           mode="all"
         />
       </div>
 
       {/* Main Content */}
-      <div className="px-4 sm:px-6 lg:px-8 py-4 flex flex-col lg:flex-row gap-6 h-[calc(100vh-160px)]">
+      <div className="px-3 sm:px-5 lg:px-6 py-3 flex flex-col lg:flex-row gap-4">
           {/* Sidebar */}
-          <div className="w-full lg:w-60 xl:w-64 flex-shrink-0">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full">
-              <GeneSelectionSidebar
-                geneNames={state.geneNames}
-                activeGenes={state.activeGenes}
-                onToggleGene={toggleGeneSelection}
-                onToggleAll={toggleAllGenes}
-                onTogglePresence={togglePresence}
-                showPresence={state.showPresence}
-              />
+          {showSidebar ? (
+            <div className="w-full lg:w-56 xl:w-64 flex-shrink-0 relative">
+              <button
+                onClick={() => setShowSidebar(false)}
+                className="absolute top-2 right-2 h-7 w-7 rounded border bg-white hover:bg-gray-50 flex items-center justify-center"
+                aria-label="Collapse gene selection"
+                title="Hide"
+              >
+                <span aria-hidden="true">&lsaquo;</span>
+              </button>
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full">
+                <GeneSelectionSidebar
+                  geneNames={state.geneNames}
+                  activeGenes={state.activeGenes}
+                  onToggleGene={toggleGeneSelection}
+                  onToggleAll={toggleAllGenes}
+                  onTogglePresence={togglePresence}
+                  showPresence={state.showPresence}
+                />
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex-shrink-0">
+              <button
+                onClick={() => setShowSidebar(true)}
+                className="h-7 w-7 rounded border bg-white hover:bg-gray-50 flex items-center justify-center"
+                aria-label="Expand gene selection"
+                title="Expand"
+              >
+                <span aria-hidden="true">&rsaquo;</span>
+              </button>
+            </div>
+          )}
 
           {/* Visualization Area */}
           <div className="flex-1 min-w-0 flex flex-col w-full">
@@ -140,7 +161,7 @@ export function GeneVisualization() {
               {/* Loading Overlay - positioned relative to visualization area */}
               <LoadingOverlay isLoading={state.isLoading} message={state.loadingMessage} />
               
-              <div className="p-3 flex flex-col w-full">
+              <div className={`p-3 flex flex-col w-full ${state.isLoading ? 'opacity-0 pointer-events-none' : ''}`}>
                 {/* Mapping Info */}
                 {state.totalInput > 0 && (
                   <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
@@ -163,6 +184,7 @@ export function GeneVisualization() {
 
                 {/* Visualization */}
                 <div className="w-full flex-1">
+                  {!state.isLoading && (
                   <VisualizationCanvas
                     data={state.raw}
                     selectedLevels={state.selectedLevels}
@@ -177,6 +199,7 @@ export function GeneVisualization() {
                     onWidthChange={onWidthChange}
                     getColorScale={getColorScale}
                   />
+                  )}
                 </div>
               </div>
             </div>
