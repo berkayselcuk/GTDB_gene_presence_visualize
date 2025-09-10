@@ -6,6 +6,7 @@ export interface GTDBRecord {
   order: string;
   family: string;
   genus: string;
+  species: string;
 }
 
 export interface GeneCountData {
@@ -38,7 +39,7 @@ export interface VisualizationState {
   loadingMessage: string;
 }
 
-export type TaxonomicLevel = 'phylum' | 'class' | 'order' | 'family' | 'genus';
+export type TaxonomicLevel = 'phylum' | 'class' | 'order' | 'family' | 'genus' | 'species';
 
 export interface ColorScale {
   (value: string): string;

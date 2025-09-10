@@ -44,6 +44,7 @@ export function GeneVisualization() {
     datasets,
     setDataset,
     taxonomy,
+    datasetLabels,
   } = useGeneVisualization()
 
   const handleFileUpload = () => {
@@ -67,6 +68,7 @@ export function GeneVisualization() {
   // Calculate coverage percentages
   const inputCoverage = state.totalInput > 0 ? ((state.countMap.size / state.totalInput) * 100).toFixed(1) : '0.0'
   const gtdbCoverage = state.asmCount > 0 ? ((state.countMap.size / state.asmCount) * 100).toFixed(1) : '0.0'
+  const selectedDatasetLabel = datasetLabels?.[dataset] ?? dataset.replace(/\.json$/, '')
   
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
@@ -81,7 +83,7 @@ export function GeneVisualization() {
             <div className="hidden md:flex items-center space-x-6 text-sm text-gray-600">
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>GTDB v{taxonomy}: {state.asmCount.toLocaleString()} assemblies</span>
+                <span>{selectedDatasetLabel}: {state.asmCount.toLocaleString()} assemblies</span>
               </div>
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
@@ -113,6 +115,7 @@ export function GeneVisualization() {
           datasetOptions={datasets}
           selectedDataset={dataset}
           onDatasetChange={(d) => setDataset(d as unknown as typeof datasets[number])}
+          datasetLabels={datasetLabels}
           SearchLineageInput={SearchLineageInput}
           mode="all"
         />
@@ -171,7 +174,7 @@ export function GeneVisualization() {
                           Mapped {state.countMap.size.toLocaleString()} of {state.totalInput.toLocaleString()} input assemblies
                         </div>
                         <div className="text-xs text-blue-700 mt-1">
-                          Coverage: {inputCoverage}% of input data • {gtdbCoverage}% of GTDB v214
+                          Coverage: {inputCoverage}% of input data • {gtdbCoverage}% of {selectedDatasetLabel}
                         </div>
                       </div>
                       <div className="text-right">

@@ -17,15 +17,21 @@ import type {
 // point to the domain root.
 const DATASETS = [
   'GTDB214_lineage_ordered_custom_order_36genes_alpha0.8_0.8cov.json',
-  'GTDB214_lineage_ordered_custom_order_36genes_alpha0.8_0.5cov.json',
-  'GTDB214_lineage_ordered_custom_order_43genes_0.5cov.json',
-  'GTDB214_lineage_ordered_custom_order_43genes.json',
-  'GTDB214_lineage_ordered_custom_order.json',
   'GTDB214_lineage_ordered.json',
 ] as const;
 
 // Default dataset to load on first render
 const DEFAULT_DATASET = DATASETS[0];
+
+// Optional default TSV to auto-load on first initialization (from public/)
+const DEFAULT_TSV_FILENAME = 'flagellar_genes_phyletic_distribution_22-08-2025_ordered.tsv';
+
+// Custom labels to show in the UI for each dataset
+const DATASET_LABELS: Record<typeof DATASETS[number], string> = {
+  'GTDB214_lineage_ordered_custom_order_36genes_alpha0.8_0.8cov.json': 'Flagella Phylogeny',
+  'GTDB214_lineage_ordered.json': "GTDB v214",
+};
+
 // Derive available GTDB taxonomy versions from dataset filenames (e.g., GTDB214)
 const TAXONOMY_VERSIONS = Array.from(
   new Set(
@@ -35,7 +41,7 @@ const TAXONOMY_VERSIONS = Array.from(
     }).filter(Boolean) as string[]
   )
 ).sort((a, b) => Number(b) - Number(a));
-const ALL_LEVELS: TaxonomicLevel[] = ['phylum', 'class', 'order', 'family', 'genus'];
+const ALL_LEVELS: TaxonomicLevel[] = ['phylum', 'class', 'order', 'family', 'genus', 'species'];
 const GOLDEN = 0.618033988749895;
 
 export function useGeneVisualization() {
@@ -98,25 +104,36 @@ export function useGeneVisualization() {
     let cancelled = false;
 
     const run = async () => {
-      const showOverlay = !isFirstDatasetLoadRef.current || !!lastTSVTextRef.current;
-      if (showOverlay) {
-        // Show overlay to avoid flashing intermediate states
-        setState(prev => ({
-          ...prev,
-          isLoading: true,
-          loadingMessage: 'Switching taxonomy...'
-        }));
-      }
+      try {
+        // Show a taxonomy switching overlay only if this is not the first dataset load
+        if (!isFirstDatasetLoadRef.current) {
+          setState(prev => ({ ...prev, isLoading: true, loadingMessage: 'Switching taxonomy...' }));
+          // small delay so the spinner can show before we block the thread with JSON parse
+          await new Promise(r => setTimeout(r, 10));
+        }
 
-      await loadGTDBData(dataset);
+        await loadGTDBData(dataset);
 
-      if (cancelled) return;
+        // Auto-load default TSV only on the first initialization
+        if (isFirstDatasetLoadRef.current && !lastTSVTextRef.current) {
+          try {
+            const resp = await fetch(DEFAULT_TSV_FILENAME);
+            if (resp.ok) {
+              const text = await resp.text();
+              loadTSVData(text);
+            }
+          } catch (e) {
+            // ignore if the TSV is missing or fails to load; manual Load TSV remains available
+            console.warn('Default TSV auto-load failed:', e);
+          }
+        }
 
-      if (lastTSVTextRef.current) {
-        // Recompute rugs with the cached TSV; loadTSVData will set isLoading=false when done
-        loadTSVData(lastTSVTextRef.current);
-      } else {
-        if (showOverlay) {
+        // If a TSV was already loaded before, re-apply it so the user keeps their analysis context
+        if (lastTSVTextRef.current) {
+          loadTSVData(lastTSVTextRef.current);
+        }
+      } finally {
+        if (!cancelled) {
           setState(prev => ({ ...prev, isLoading: false, loadingMessage: '' }));
         }
       }
@@ -188,35 +205,32 @@ export function useGeneVisualization() {
         const geneNames = header.filter(h => h.endsWith('_count'));
         const geneIndex = new Map(geneNames.map((g, i) => [g, i]));
         const matrix = new Uint8Array(geneNames.length * prev.asmCount);
-        const countMap = new Map<string, GeneCountData>();
-
-        // Process TSV data
-        rows.forEach((rowStr) => {
-          const row = rowStr.split('\t');
-          const asm = row[0];
-          if (!prev.asmIndex.has(asm)) return;
+        const newCountMap = new Map<string, GeneCountData>();
+        
+        for (let r = 0; r < rows.length; r++) {
+          const cols = rows[r].split('\t');
+          const asm = cols[0];
+          const asmIdx = prev.asmIndex.get(asm);
+          if (asmIdx === undefined) continue;
           
-          const ai = prev.asmIndex.get(asm)!;
           const cm: GeneCountData = {};
-          
-          geneNames.forEach((g, gi) => {
-            const cnt = +row[header.indexOf(g)] || 0;
-            cm[g] = cnt;
-            if (cnt > 0) {
-              matrix[gi * prev.asmCount + ai] = 1;
+          for (let g = 0; g < geneNames.length; g++) {
+            const val = Number(cols[1 + g]) || 0;
+            cm[geneNames[g]] = val;
+            if (val > 0) {
+              matrix[g * prev.asmCount + asmIdx] = 1;
             }
-          });
-          
-          countMap.set(asm, cm);
-        });
+          }
+          newCountMap.set(asm, cm);
+        }
 
         return {
           ...prev,
           totalInput,
           geneNames,
-          matrix,
           geneIndex,
-          countMap,
+          matrix,
+          countMap: newCountMap,
           isLoading: false,
           loadingMessage: '',
         };
@@ -636,8 +650,8 @@ export function useGeneVisualization() {
     dataset,
     // Expose all datasets; UI can filter/group by taxonomy
     datasets: [...DATASETS] as Array<typeof DATASETS[number]>,
+    datasetLabels: DATASET_LABELS,
     setDataset,
-    taxonomyVersions: TAXONOMY_VERSIONS,
     taxonomy,
   };
 } 

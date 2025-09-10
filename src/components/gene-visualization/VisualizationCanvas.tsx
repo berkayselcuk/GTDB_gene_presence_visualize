@@ -519,10 +519,11 @@ ref
 
     const container = containerRef.current;
     const MARGINS = { top: 20, right: 16, bottom: 24, left: 100 };
-    const LEVEL_HEIGHT = 28;
-    const RUG_HEIGHT = 14;
-    const RUG_PAD = 4;
-    const BASE_GAP = 20;
+    // Match canvas rendering constants exactly to avoid row mismatches
+    const LEVEL_HEIGHT = 21; // must match canvas effect
+    const RUG_HEIGHT = 10;   // must match canvas effect
+    const RUG_PAD = 3;       // must match canvas effect
+    const BASE_GAP = 15;     // must match canvas effect
 
     const handleMouseMove = (event: MouseEvent) => {
       const rect = container.getBoundingClientRect();

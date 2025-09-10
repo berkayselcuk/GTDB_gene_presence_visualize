@@ -16,11 +16,14 @@ export default function LineageAutocomplete({
 }: LineageAutocompleteProps) {
   const [value, setValue] = useState<string>('');
 
+  // normalize: treat single underscore as double underscore for matching (e.g., 's_' matches 's__')
+  const normalize = (s: string) => s.toLowerCase().replace(/(^|\b)([dpcofgs])_/, '$1$2__');
+
   // filter down the suggestions as the user types
   const filtered = useMemo(
     () =>
       suggestions.filter((opt) =>
-        opt.toLowerCase().includes(value.toLowerCase())
+        normalize(opt).includes(normalize(value))
       ),
     [value, suggestions]
   );

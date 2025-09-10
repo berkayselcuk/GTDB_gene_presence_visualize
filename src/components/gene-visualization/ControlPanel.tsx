@@ -25,12 +25,13 @@ interface ControlPanelProps {
   datasetOptions: readonly string[]
   selectedDataset: string
   onDatasetChange: (dataset: string) => void
+  datasetLabels?: Record<string, string>
   
   // Autocomplete component
   SearchLineageInput: (props: React.InputHTMLAttributes<HTMLInputElement>) => React.ReactElement
 }
 
-const allLevels: TaxonomicLevel[] = ['phylum', 'class', 'order', 'family', 'genus']
+const allLevels: TaxonomicLevel[] = ['phylum', 'class', 'order', 'family', 'genus', 'species']
 
 export function ControlPanel({
   onLoadTSV,
@@ -46,6 +47,7 @@ export function ControlPanel({
   datasetOptions,
   selectedDataset,
   onDatasetChange,
+  datasetLabels,
   SearchLineageInput,
 }: ControlPanelProps) {
   const [diffGene1, setDiffGene1] = useState('')
@@ -87,7 +89,7 @@ export function ControlPanel({
             <SelectContent>
               {datasetOptions.map((file) => (
                 <SelectItem key={file} value={file} className="text-xs">
-                  {file.replace(/\.json$/, '')}
+                  {datasetLabels?.[file] ?? file.replace(/\.json$/, '')}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -117,8 +119,8 @@ export function ControlPanel({
             </label>
           ))}
         </div>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-          {(['family','genus'] as TaxonomicLevel[]).map(level => (
+        <div className="grid grid-cols-3 gap-x-3 gap-y-1">
+          {(['family','genus','species'] as TaxonomicLevel[]).map(level => (
             <label key={level} className="flex items-center gap-1 text-xs cursor-pointer">
               <Checkbox
                 checked={selectedLevels.includes(level)}
@@ -134,11 +136,8 @@ export function ControlPanel({
       <div className="flex flex-col justify-between items-start gap-1 px-2.5 py-1 bg-gray-50 rounded border min-w-fit h-16">
         <span className="text-[11px] font-semibold uppercase tracking-wide leading-none text-gray-600">Search</span>
         <div className="flex items-center gap-1">
-          <div className="w-40">
-            <SearchLineageInput
-              placeholder="Search lineage"
-              className="text-xs h-7 w-full"
-            />
+          <div className="w-44">
+            <SearchLineageInput placeholder="Search lineage" />
           </div>
           <Button onClick={onResetFilter} size="sm" variant="outline" className="px-2 h-7">
             <RefreshCw className="w-3 h-3" />
@@ -146,27 +145,45 @@ export function ControlPanel({
         </div>
       </div>
 
-      {/* Gene Comparison */}
+      {/* Normalize */}
+      <div className="flex flex-col justify-between items-start gap-1 px-2.5 py-1 bg-gray-50 rounded border min-w-fit h-16">
+        <span className="text-[11px] font-semibold uppercase tracking-wide leading-none text-gray-600">Normalize</span>
+        <div className="flex items-center gap-1">
+          <Select value={normalizeLevel ?? 'none'} onValueChange={(v) => onNormalizeLevel(((v === 'none') ? null : v) as any)}>
+            <SelectTrigger className="h-7 text-xs w-44">
+              <SelectValue placeholder="None" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              {allLevels.map(level => (
+                <SelectItem key={level} value={level} className="text-xs capitalize">{level}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Compare Genes */}
       <div className="flex flex-col justify-between items-start gap-1 px-2.5 py-1 bg-gray-50 rounded border min-w-fit h-16">
         <span className="text-[11px] font-semibold uppercase tracking-wide leading-none text-gray-600">Compare Genes</span>
         <div className="flex items-center gap-1">
           <Select value={diffGene1} onValueChange={setDiffGene1}>
-            <SelectTrigger className="h-7 text-xs w-20">
-              <SelectValue placeholder="Gene 1" />
+            <SelectTrigger className="h-7 text-xs w-28">
+              <SelectValue placeholder="Gene" />
             </SelectTrigger>
             <SelectContent>
               {geneNames.map(gene => (
-                <SelectItem key={gene} value={gene}>{gene}</SelectItem>
+                <SelectItem key={gene} value={gene}>{gene.replace(/_count$/, '')}</SelectItem>
               ))}
             </SelectContent>
           </Select>
           <Select value={diffGene2} onValueChange={setDiffGene2}>
-            <SelectTrigger className="h-7 text-xs w-20">
-              <SelectValue placeholder="Gene 2" />
+            <SelectTrigger className="h-7 text-xs w-28">
+              <SelectValue placeholder="Gene" />
             </SelectTrigger>
             <SelectContent>
               {geneNames.map(gene => (
-                <SelectItem key={gene} value={gene}>{gene}</SelectItem>
+                <SelectItem key={gene} value={gene}>{gene.replace(/_count$/, '')}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -180,51 +197,36 @@ export function ControlPanel({
         </div>
       </div>
 
-      {/* Normalize */}
-      <div className="flex flex-col justify-between items-start gap-1 px-2.5 py-1 bg-gray-50 rounded border min-w-fit h-16"> 
-        <span className="text-[11px] font-semibold uppercase tracking-wide leading-none text-gray-600">Normalize</span>
-        <Select value={normalizeLevel || 'none'} onValueChange={(value) => onNormalizeLevel(value === 'none' ? null : value as TaxonomicLevel)}>
-          <SelectTrigger className="h-7 text-xs w-20">
-            <SelectValue placeholder="Level" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">None</SelectItem>
-            {allLevels.map(level => (
-              <SelectItem key={level} value={level} className="capitalize">{level}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col justify-between items-start gap-1 px-2.5 py-1 bg-gray-50 rounded border min-w-fit h-16"> 
+      {/* Filter Genomes */}
+      <div className="flex flex-col justify-between items-start gap-1 px-2.5 py-1 bg-gray-50 rounded border min-w-fit h-16">
         <span className="text-[11px] font-semibold uppercase tracking-wide leading-none text-gray-600">Filter Genomes</span>
-        <div className="flex items-center gap-1">
-          <Button onClick={onFilterAssemblies} size="sm" variant="outline" className="text-xs px-2 h-7">
+        <div className="flex items-center gap-2">
+          <Button onClick={onFilterAssemblies} variant="outline" size="sm" className="h-7 text-xs px-2">
             All Zero
           </Button>
-          <Select value={sizeFilterLevel} onValueChange={(value) => setSizeFilterLevel(value as TaxonomicLevel | '')}>
-            <SelectTrigger className="h-7 text-xs w-20">
-              <SelectValue placeholder="Level" />
-            </SelectTrigger>
-            <SelectContent>
-              {allLevels.map(level => (
-                <SelectItem key={level} value={level} className="capitalize">{level}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Input
-            type="number"
-            value={sizeThreshold}
-            onChange={(e) => setSizeThreshold(+e.target.value)}
-            className="text-xs !h-7 w-14"
-            placeholder="Min"
-          />
-          <Button onClick={handleSizeFilter} size="sm" disabled={!sizeFilterLevel} className="h-7 text-xs px-2">
-            Apply
-          </Button>
+          <div className="flex items-center gap-1">
+            <Select value={sizeFilterLevel} onValueChange={(v) => setSizeFilterLevel(v as TaxonomicLevel)}>
+              <SelectTrigger className="h-7 text-xs w-28">
+                <SelectValue placeholder="Level" />
+              </SelectTrigger>
+              <SelectContent>
+                {allLevels.map(level => (
+                  <SelectItem key={level} value={level} className="text-xs capitalize">{level}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              type="number"
+              min={0}
+              value={sizeThreshold}
+              onChange={(e) => setSizeThreshold(Number(e.target.value))}
+              className="h-7 text-xs w-16"
+              placeholder="0"
+            />
+            <Button onClick={handleSizeFilter} size="sm" className="h-7 text-xs px-2">Apply</Button>
+          </div>
         </div>
       </div>
     </div>
-  );
+  )
 } 
