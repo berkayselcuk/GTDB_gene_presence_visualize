@@ -199,6 +199,7 @@ export function GeneVisualization() {
                     geneIndex={state.geneIndex}
                     countMap={state.countMap}
                     onLineageClick={filterByLineage}
+                    onDomainClick={resetFilters}
                     onWidthChange={onWidthChange}
                     getColorScale={getColorScale}
                   />

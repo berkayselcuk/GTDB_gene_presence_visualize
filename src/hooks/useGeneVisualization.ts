@@ -375,7 +375,8 @@ export function useGeneVisualization() {
 
     setTimeout(() => {
       setState(prev => {
-        const filtered = prev.raw.filter(d => d[level] === category);
+        // Always filter from the full dataset to allow zooming OUT when clicking higher ranks
+        const filtered = prev.originalRaw.filter(d => d[level] === category);
         return {
           ...prev,
           raw: filtered,
@@ -610,7 +611,8 @@ export function useGeneVisualization() {
           };
         }
         
-        const filtered = prev.raw.filter(d => d[level] === searchTerm);
+        // Search should also filter from the full dataset to provide complete context
+        const filtered = prev.originalRaw.filter(d => d[level] === searchTerm);
         return {
           ...prev,
           raw: filtered,

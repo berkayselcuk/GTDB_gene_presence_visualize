@@ -19,6 +19,7 @@ interface VisualizationCanvasProps {
   geneIndex: Map<string, number>;
   countMap: Map<string, Record<string, number>>;
   onLineageClick: (level: TaxonomicLevel, category: string) => void;
+  onDomainClick: () => void;
   onWidthChange?: (width: number) => void;
   getColorScale: (level: TaxonomicLevel, categories: string[]) => d3.ScaleOrdinal<string, string>;
 }
@@ -32,22 +33,21 @@ interface TooltipProps {
   isVisible: boolean;
   x: number;
   y: number;
-  // level kept for future but unused currently
-  // level: string;
   category: string;
   count: number;
+  containerWidth: number;
+  containerHeight: number;
 }
 
 function Tooltip({ isVisible, x, y, category, count }: TooltipProps) {
   if (!isVisible) return null;
-  
   return (
     <div 
-      className="absolute pointer-events-none bg-gray-900 text-white text-xs rounded px-2 py-1 shadow-lg z-20 whitespace-nowrap"
+      className="absolute pointer-events-none bg-gray-900 text-white text-xs rounded px-2 py-1 shadow-lg z-50 whitespace-nowrap"
       style={{ 
         left: `${x - 12}px`, 
         top: `${y + 12}px`,
-        transform: 'translate(-100%, 0)' // Position to the left of cursor
+        transform: 'translate(-100%, 0)'
       }}
     >
       <div className="font-semibold">{category}</div>
@@ -68,6 +68,7 @@ export const VisualizationCanvas = forwardRef<VisualizationCanvasHandle, Visuali
   geneIndex,
   countMap,
   onLineageClick,
+  onDomainClick,
   onWidthChange,
   getColorScale,
 }: VisualizationCanvasProps,
@@ -129,6 +130,9 @@ ref
     width: number;
     height: number;
   } | null>(null);
+
+  // Extra space at the bottom to prevent tooltip clipping
+  const EXTRA_BOTTOM_PADDING = 50; // adjust as desired
 
   // Enhanced ResizeObserver with improved responsiveness
   useEffect(() => {
@@ -247,7 +251,7 @@ ref
     svg.selectAll('*').remove();
 
     // Constants - use consistent margins with buildLayout (tighter)
-    const MARGINS = { top: 20, right: 16, bottom: 24, left: 100 };
+    const MARGINS = { top: 20, right: 16, bottom: 24 + EXTRA_BOTTOM_PADDING, left: 100 };
     
     // Use the full container width minus only the left margin for the plot area
     // The coordMap and widthMap already account for the proper spacing
@@ -271,8 +275,9 @@ ref
     // Use the color scale function passed as prop (already has pastel colors and stable mapping)
 
     // Set up SVG dimensions
+    const totalLevels = selectedLevels.length + 1; // +1 for domain row
     const svgHeight = MARGINS.top + 
-                      selectedLevels.length * LEVEL_HEIGHT + 
+                      totalLevels * LEVEL_HEIGHT + 
                       (activeGenes.length ? BASE_GAP + activeGenes.length * (RUG_HEIGHT + RUG_PAD) : 0) + 
                       MARGINS.bottom;
 
@@ -294,8 +299,99 @@ ref
       counts[level] = d3.rollup(data, v => v.length, d => d[level]);
     });
 
+    // Helper to clean lineage names like p__/c__/...
+    const cleanLineageName = (name: string) => name.replace(/^[a-z]__/, '');
+
+    // Utility: pick readable text color for a given background
+    const textFillForBg = (bg: string) => {
+      const c = d3.color(bg);
+      if (!c) return '#111827';
+      const rgb = c.rgb();
+      const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+      return brightness < 130 ? '#ffffff' : '#111827';
+    };
+
+    // Draw Domain row at the top spanning all assemblies
+    {
+      const y = 0;
+      const g = plot.append('g')
+        .attr('class', 'level domain')
+        .attr('transform', `translate(0,${y})`);
+
+      const firstAsm = assemblies[0];
+      const lastAsm = assemblies[assemblies.length - 1];
+      const startX = coordMap.get(firstAsm) || 0;
+      const endX = coordMap.get(lastAsm) || 0;
+      const endW = widthMap.get(lastAsm) || 0;
+      const rectWidth = endX + endW - startX;
+
+      // Domain rectangle
+      g.append('rect')
+        .attr('x', startX)
+        .attr('y', 0)
+        .attr('width', rectWidth)
+        .attr('height', LEVEL_HEIGHT - INNER_PAD)
+        .attr('fill', '#e5e7eb') // light gray
+        .attr('stroke', '#d1d5db')
+        .attr('stroke-width', 0.5)
+        .style('cursor', 'pointer')
+        .on('click', () => {
+          onDomainClick();
+        })
+        .on('mouseover', (e: MouseEvent) => {
+          // Show highlight around the domain rectangle
+          setHighlightedRect({
+            x: startX,
+            y: 0,
+            width: rectWidth,
+            height: LEVEL_HEIGHT - INNER_PAD,
+          });
+          const containerRect = containerRef.current?.getBoundingClientRect();
+          if (containerRect && e) {
+            setTooltip({
+              isVisible: true,
+              x: e.clientX - containerRect.left,
+              y: e.clientY - containerRect.top,
+              level: 'domain',
+              category: 'Bacteria',
+              count: assemblies.length,
+            });
+          }
+        })
+        .on('mouseout', () => {
+          setHighlightedRect(null);
+          setTooltip(prev => ({ ...prev, isVisible: false }));
+        });
+
+      // Domain label centered if it fits
+      const domainLabel = 'Bacteria';
+      const approxCharWidth = 6; // px at ~10px font
+      if (rectWidth - 6 > domainLabel.length * approxCharWidth) {
+        g.append('text')
+          .attr('x', startX + rectWidth / 2)
+          .attr('y', (LEVEL_HEIGHT - INNER_PAD) / 2)
+          .attr('dy', '.35em')
+          .attr('text-anchor', 'middle')
+          .text(domainLabel)
+          .style('font-size', '10px')
+          .style('font-weight', '500')
+          .style('fill', '#374151');
+      }
+
+      // Left-side level label
+      g.append('text')
+        .attr('x', -6)
+        .attr('y', LEVEL_HEIGHT / 2)
+        .attr('dy', '.35em')
+        .attr('text-anchor', 'end')
+        .text('domain')
+        .style('font-size', '10px')
+        .style('font-weight', '500')
+        .style('fill', '#374151');
+    }
+
     selectedLevels.forEach((level, i) => {
-      const y = i * LEVEL_HEIGHT;
+      const y = (i + 1) * LEVEL_HEIGHT; // shift down by domain row
       const g = plot.append('g')
         .attr('class', 'level')
         .attr('transform', `translate(0,${y})`);
@@ -377,6 +473,36 @@ ref
           setTooltip(prev => ({ ...prev, isVisible: false }));
         });
 
+      // Add in-rect labels for runs if the text fits
+      g.selectAll('text.run-label')
+        .data(runs)
+        .join('text')
+        .attr('class', 'run-label')
+        .attr('x', d => {
+          const startX = coordMap.get(assemblies[d.start]) || 0;
+          const endX = coordMap.get(assemblies[d.end]) || 0;
+          const endW = widthMap.get(assemblies[d.end]) || 0;
+          return startX + (endX + endW - startX) / 2;
+        })
+        .attr('y', (LEVEL_HEIGHT - INNER_PAD) / 2)
+        .attr('dy', '.35em')
+        .attr('text-anchor', 'middle')
+        .text(d => cleanLineageName(d.cat))
+        .style('font-size', '9px')
+        .style('font-weight', '500')
+        .style('fill', d => textFillForBg(scale(d.cat)))
+        .style('pointer-events', 'none')
+        .each(function(d) {
+          const startX = coordMap.get(assemblies[d.start]) || 0;
+          const endX = coordMap.get(assemblies[d.end]) || 0;
+          const endW = widthMap.get(assemblies[d.end]) || 0;
+          const w = endX + endW - startX;
+          const label = cleanLineageName(d.cat);
+          const approxCharWidth = 5.5; // slightly smaller for 9px font
+          const fits = w - 6 > label.length * approxCharWidth;
+          d3.select(this as SVGTextElement).style('opacity', fits ? 1 : 0);
+        });
+
       // Add level label
       g.append('text')
         .attr('x', -6)
@@ -392,7 +518,7 @@ ref
     // Keep SVG labels for gene rugs - they're not the performance bottleneck
     if (activeGenes.length > 0) {
       const rugLabels = plot.append('g').attr('class', 'rug-labels');
-      const baseY = selectedLevels.length * LEVEL_HEIGHT + BASE_GAP;
+      const baseY = (selectedLevels.length + 1) * LEVEL_HEIGHT + BASE_GAP;
 
       activeGenes.forEach((gene, geneIdx) => {
         const y = baseY + geneIdx * (RUG_HEIGHT + RUG_PAD);
@@ -413,7 +539,7 @@ ref
     // Add highlight layer on top of everything
     plot.append('g').attr('class', 'highlight-layer');
 
-      }, [data, selectedLevels, activeGenes, matrix, coordMap, widthMap, asmIndex, geneIndex, onLineageClick, getColorScale]);
+      }, [data, selectedLevels, activeGenes, matrix, coordMap, widthMap, asmIndex, geneIndex, onLineageClick, getColorScale, containerWidth, onDomainClick]);
 
   // Separate effect for Canvas-based gene rug rendering
   useEffect(() => {
@@ -434,7 +560,7 @@ ref
     if (!context) return;
 
     // Constants matching SVG version
-    const MARGINS = { top: 20, right: 16, bottom: 24, left: 100 }; // keep in sync with SVG
+    const MARGINS = { top: 20, right: 16, bottom: 24 + EXTRA_BOTTOM_PADDING, left: 100 }; // keep in sync with SVG
     const LEVEL_HEIGHT = 21; // ~25% smaller
     const RUG_HEIGHT = 10; // ~25% smaller
     const RUG_PAD = 3; // ~25% smaller
@@ -442,7 +568,7 @@ ref
 
     // Calculate canvas dimensions to match SVG exactly
     const svgHeight = MARGINS.top + 
-                      selectedLevels.length * LEVEL_HEIGHT + 
+                      (selectedLevels.length + 1) * LEVEL_HEIGHT + 
                       (activeGenes.length ? BASE_GAP + activeGenes.length * (RUG_HEIGHT + RUG_PAD) : 0) + 
                       MARGINS.bottom;
 
@@ -474,7 +600,7 @@ ref
 
     // Draw gene rugs using Canvas
     const assemblies = data.map(d => d.assembly);
-    const baseY = MARGINS.top + selectedLevels.length * LEVEL_HEIGHT + BASE_GAP;
+    const baseY = MARGINS.top + (selectedLevels.length + 1) * LEVEL_HEIGHT + BASE_GAP;
 
     // draw rugs per gene
     activeGenes.forEach((gene, geneIdx) => {
@@ -531,8 +657,8 @@ ref
       const y = event.clientY - rect.top;
 
       // Only handle mouse events in the gene rug area
-      const baseY = MARGINS.top + selectedLevels.length * LEVEL_HEIGHT + BASE_GAP;
-      const lineageAreaMaxY = MARGINS.top + selectedLevels.length * LEVEL_HEIGHT;
+      const baseY = MARGINS.top + (selectedLevels.length + 1) * LEVEL_HEIGHT + BASE_GAP;
+      const lineageAreaMaxY = MARGINS.top + (selectedLevels.length + 1) * LEVEL_HEIGHT;
       
       // If mouse is in lineage area, don't show gene tooltips
       if (y < lineageAreaMaxY) {
@@ -718,6 +844,8 @@ ref
               y={tooltip.y}
               category={tooltip.category}
               count={tooltip.count}
+              containerWidth={0}
+              containerHeight={0}
             />
           </div>
         </CardContent>
