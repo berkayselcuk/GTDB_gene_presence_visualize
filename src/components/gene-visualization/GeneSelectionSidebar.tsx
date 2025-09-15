@@ -30,6 +30,19 @@ export function GeneSelectionSidebar({
   const activeRegularGenes = activeGenes.filter(gene => !gene.includes('>') && !gene.includes('-'))
   const activeDifferenceGenes = activeGenes.filter(gene => gene.includes('>') || gene.includes('-'))
 
+  // Sidebar-only alphabetical ordering (does not change visualization order)
+  const regularGenesSorted = React.useMemo(() => {
+    return [...regularGenes].sort((a, b) => {
+      const la = a.replace(/_count$/, '').toLowerCase()
+      const lb = b.replace(/_count$/, '').toLowerCase()
+      return la.localeCompare(lb)
+    })
+  }, [regularGenes])
+
+  const differenceGenesSorted = React.useMemo(() => {
+    return [...differenceGenes].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+  }, [differenceGenes])
+
   return (
     <div className="flex flex-col">
       {/* Header */}
@@ -112,7 +125,7 @@ export function GeneSelectionSidebar({
                   </div>
                 ) : (
                   <div className="p-2 grid grid-cols-2 gap-1">
-                    {regularGenes.map((gene) => (
+                    {regularGenesSorted.map((gene) => (
                       <label 
                         key={gene} 
                         className="flex items-center space-x-1 p-1 rounded hover:bg-gray-50 cursor-pointer group"
@@ -166,7 +179,7 @@ export function GeneSelectionSidebar({
                   </div>
                 ) : (
                   <div className="p-2 grid grid-cols-2 gap-1">
-                    {differenceGenes.map((gene) => (
+                    {differenceGenesSorted.map((gene) => (
                       <label 
                         key={gene} 
                         className="flex items-center space-x-1 p-1 rounded hover:bg-purple-50 cursor-pointer group"
