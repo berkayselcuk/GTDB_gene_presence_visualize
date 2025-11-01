@@ -18,15 +18,23 @@ interface VisualizationCanvasProps {
   asmIndex: Map<string, number>;
   geneIndex: Map<string, number>;
   countMap: Map<string, Record<string, number>>;
-  onLineageClick: (level: TaxonomicLevel, category: string) => void;
+  onLineageClick: (level: TaxonomicLevel, category: string, range?: { start: number; end: number }) => void;
   onDomainClick: () => void;
   onWidthChange?: (width: number) => void;
   getColorScale: (level: TaxonomicLevel, categories: string[]) => d3.ScaleOrdinal<string, string>;
+  rugMode?: 'binary' | 'normalized' | 'heatmap';
 }
 
 export type VisualizationCanvasHandle = {
   downloadSVG: () => void;
 };
+
+// Heatmap color anchors (wheat → red → black)
+// Ranges: 1–5 (wheat→red), 5–20 (red→black), >20 saturates at black
+const HEAT_MID_WHEAT = '#F5DEB3';     // start wheat
+const HEAT_HIGH_RED = '#DC2626';      // mid red
+const HEAT_BLACK = '#000000';         // high black
+const CORE_LABEL = 'Core genes present';
 
 // Tooltip component
 interface TooltipProps {
@@ -37,9 +45,10 @@ interface TooltipProps {
   count: number;
   containerWidth: number;
   containerHeight: number;
+  label?: string;
 }
 
-function Tooltip({ isVisible, x, y, category, count }: TooltipProps) {
+function Tooltip({ isVisible, x, y, category, count, label }: TooltipProps) {
   if (!isVisible) return null;
   return (
     <div 
@@ -52,6 +61,7 @@ function Tooltip({ isVisible, x, y, category, count }: TooltipProps) {
     >
       <div className="font-semibold">{category}</div>
       <div>Count: {count.toLocaleString()}</div>
+      {label ? (<div>{label}</div>) : null}
     </div>
   );
 }
@@ -71,6 +81,7 @@ export const VisualizationCanvas = forwardRef<VisualizationCanvasHandle, Visuali
   onDomainClick,
   onWidthChange,
   getColorScale,
+  rugMode = 'binary',
 }: VisualizationCanvasProps,
 ref
 ) {
@@ -85,15 +96,24 @@ ref
     const original = svgRef.current;
     const clone = original.cloneNode(true) as SVGSVGElement;
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    clone.setAttribute('version', '1.1');
+    const vbWidth = containerWidth;
+    const vbHeight = (lastSvgHeight && lastSvgHeight > 0) ? lastSvgHeight : (canvasRef.current ? Math.round((canvasRef.current.height || 0) / (window.devicePixelRatio || 1)) : 0);
+    if (vbWidth && vbHeight) {
+      clone.setAttribute('viewBox', `0 0 ${vbWidth} ${vbHeight}`);
+    }
     const canvas = canvasRef.current;
     if (canvas && canvas.width > 0 && canvas.height > 0) {
       const dataUrl = canvas.toDataURL('image/png');
       const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+      try { img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', dataUrl); } catch {}
       img.setAttribute('href', dataUrl);
       img.setAttribute('x', '0');
       img.setAttribute('y', '0');
       img.setAttribute('width', String(containerWidth));
-      img.setAttribute('height', String(lastSvgHeight || canvas.getBoundingClientRect().height));
+      img.setAttribute('height', String((lastSvgHeight && lastSvgHeight > 0) ? lastSvgHeight : Math.round((canvas.height || 0) / (window.devicePixelRatio || 1)) || canvas.getBoundingClientRect().height));
+      img.setAttribute('preserveAspectRatio', 'none');
       clone.insertBefore(img, clone.firstChild);
     }
     const serializer = new XMLSerializer();
@@ -115,6 +135,7 @@ ref
     level: string;
     category: string;
     count: number;
+    label?: string;
   }>({
     isVisible: false,
     x: 0,
@@ -430,7 +451,7 @@ ref
         .attr('stroke-width', 0.5)
         .style('cursor', 'pointer')
         .on('click', (event, d) => {
-          onLineageClick(level, d.cat);
+          onLineageClick(level, d.cat, { start: d.start, end: d.end });
         })
         .on('mouseover', (e: MouseEvent, d) => {
           // Set highlight rectangle
@@ -598,41 +619,92 @@ ref
       return;
     }
 
-    // Draw gene rugs using Canvas
+    // Draw gene rugs using Canvas (supports binary/normalized/heatmap)
     const assemblies = data.map(d => d.assembly);
     const baseY = MARGINS.top + (selectedLevels.length + 1) * LEVEL_HEIGHT + BASE_GAP;
+
+    // Precompute maxima per active gene (used for normalization and core heatmap)
+    const geneMaxCounts: Map<string, number> = new Map();
+    activeGenes.forEach((gene) => {
+      let maxCount = 0;
+      assemblies.forEach((assembly) => {
+        const cm = countMap.get(assembly);
+        const cnt = cm ? (cm[gene] || 0) : 0;
+        if (cnt > maxCount) maxCount = cnt;
+      });
+      geneMaxCounts.set(gene, maxCount);
+    });
 
     // draw rugs per gene
     activeGenes.forEach((gene, geneIdx) => {
       const y = baseY + geneIdx * (RUG_HEIGHT + RUG_PAD);
-      const geneIndexValue = geneIndex.get(gene);
-      
-      if (geneIndexValue !== undefined) {
-        // Use consistent dark color for all gene rugs
-        context.fillStyle = '#1f2937';
-        context.globalAlpha = 1.0;
-        
-        assemblies.forEach((assembly) => {
-          const asmIndexValue = asmIndex.get(assembly);
-          if (asmIndexValue !== undefined && matrix[geneIndexValue * asmIndex.size + asmIndexValue]) {
-            // Canvas coordinate system - need to add MARGINS.left since Canvas is absolute
-            const x = (coordMap.get(assembly) || 0) + MARGINS.left;
-            const width = widthMap.get(assembly) || 0;
-            
+      const maxCount = rugMode === 'normalized' ? (geneMaxCounts.get(gene) || 0) : 0;
 
-            
-            context.fillRect(x, y, width, RUG_HEIGHT);
-            // drawn
+      assemblies.forEach((assembly) => {
+        const cm = countMap.get(assembly);
+        const count = cm ? (cm[gene] || 0) : 0;
+
+        // Determine color based on rugMode
+        let color: string;
+        if (rugMode === 'binary') {
+          color = count > 0 ? 'rgb(0,0,0)' : 'rgb(255,255,255)';
+        } else if (rugMode === 'heatmap') {
+          if (gene === CORE_LABEL) {
+            // Core: start at 44 with three discrete colors: wheat, red, black
+            if (count < 44) {
+              color = 'rgb(255,255,255)';
+            } else if (count === 44) {
+              color = d3.rgb(HEAT_MID_WHEAT).formatRgb();
+            } else if (count === 45) {
+              color = d3.rgb(HEAT_HIGH_RED).formatRgb();
+            } else { // 46 and above
+              color = d3.rgb(HEAT_BLACK).formatRgb();
+            }
+          } else {
+            if (count <= 0) {
+              color = 'rgb(255,255,255)';
+            } else if (count <= 5) {
+              const t = (count - 1) / (5 - 1);
+              const c1 = d3.rgb(HEAT_MID_WHEAT);
+              const c2 = d3.rgb(HEAT_HIGH_RED);
+              const r = Math.round(c1.r + (c2.r - c1.r) * t);
+              const g = Math.round(c1.g + (c2.g - c1.g) * t);
+              const b = Math.round(c1.b + (c2.b - c1.b) * t);
+              color = `rgb(${r}, ${g}, ${b})`;
+            } else {
+              const t = (Math.min(count, 20) - 5) / (20 - 5);
+              const c1 = d3.rgb(HEAT_HIGH_RED);
+              const c2 = d3.rgb(HEAT_BLACK);
+              const r = Math.round(c1.r + (c2.r - c1.r) * t);
+              const g = Math.round(c1.g + (c2.g - c1.g) * t);
+              const b = Math.round(c1.b + (c2.b - c1.b) * t);
+              color = `rgb(${r}, ${g}, ${b})`;
+            }
           }
-        });
-        
+        } else {
+          // normalized grayscale
+          let norm: number;
+          if (gene === CORE_LABEL) {
+            const denom = Math.max(1, maxCount - 40);
+            norm = Math.min(1, Math.max(0, (count - 40) / denom));
+          } else {
+            norm = maxCount > 0 ? (count / maxCount) : 0;
+          }
+          const intensity = Math.round(255 * (1 - norm));
+          color = `rgb(${intensity}, ${intensity}, ${intensity})`;
+        }
 
+        // Draw
+        const x = (coordMap.get(assembly) || 0) + MARGINS.left;
+        const width = widthMap.get(assembly) || 0;
+        context.fillStyle = color;
         context.globalAlpha = 1.0;
-      }
+        context.fillRect(x, y, width, RUG_HEIGHT);
+      });
     });
     
 
-  }, [data, selectedLevels, activeGenes, matrix, coordMap, widthMap, asmIndex, geneIndex, containerWidth]);
+  }, [data, selectedLevels, activeGenes, matrix, coordMap, widthMap, asmIndex, geneIndex, containerWidth, countMap, rugMode]);
 
   // Expose a method to download current visualization as an SVG (embedding canvas as an image)
   useImperativeHandle(ref, () => ({
@@ -641,7 +713,7 @@ ref
 
   // Container interaction handling for gene rug tooltips
   useEffect(() => {
-    if (!containerRef.current || !matrix || activeGenes.length === 0) return;
+    if (!containerRef.current || activeGenes.length === 0) return;
 
     const container = containerRef.current;
     const MARGINS = { top: 20, right: 16, bottom: 24, left: 100 };
@@ -684,8 +756,11 @@ ref
               const geneIndexValue = geneIndex.get(gene);
               const asmIndexValue = asmIndex.get(assembly);
               
-              if (geneIndexValue !== undefined && asmIndexValue !== undefined && 
-                  matrix[geneIndexValue * asmIndex.size + asmIndexValue]) {
+              // Use count strictly to determine presence for tooltip and bucket
+              if (geneIndexValue !== undefined && asmIndexValue !== undefined) {
+                const cm = countMap.get(assembly);
+                const present = (cm ? (cm[gene] || 0) : 0) > 0;
+                if (!present) continue;
                 hoveredGene = gene;
                 hoveredAssembly = assembly;
                 break;
@@ -697,10 +772,10 @@ ref
       }
 
       if (hoveredGene && hoveredAssembly) {
-        // Get actual count from countMap
+        // Get actual count from countMap and compute bucket label for heatmap
         const assemblyData = countMap.get(hoveredAssembly);
         const actualCount = assemblyData?.[hoveredGene] || 0;
-        
+        const label: string | undefined = undefined; // continuous scale - no bucket label
         setTooltip({
           isVisible: true,
           x: event.clientX - rect.left,
@@ -708,6 +783,7 @@ ref
           level: 'Gene',
           category: hoveredGene.replace(/_count$/, ''),
           count: actualCount,
+          label,
         });
       } else {
         // Hide tooltip when not hovering over any gene
@@ -726,7 +802,7 @@ ref
       container.removeEventListener('mousemove', handleMouseMove);
       container.removeEventListener('mouseleave', handleMouseLeave);
     };
-  }, [activeGenes, matrix, data, selectedLevels, coordMap, widthMap, asmIndex, geneIndex, countMap]);
+  }, [activeGenes, matrix, data, selectedLevels, coordMap, widthMap, asmIndex, geneIndex, countMap, rugMode]);
 
   // Separate effect to handle highlight updates
   useEffect(() => {
@@ -846,6 +922,7 @@ ref
               count={tooltip.count}
               containerWidth={0}
               containerHeight={0}
+              label={tooltip.label}
             />
           </div>
         </CardContent>

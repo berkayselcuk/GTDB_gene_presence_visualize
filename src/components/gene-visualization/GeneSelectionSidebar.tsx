@@ -25,9 +25,9 @@ export function GeneSelectionSidebar({
   onTogglePresence,
   showPresence,
 }: GeneSelectionSidebarProps) {
-  const regularGenes = geneNames.filter(gene => !gene.includes('>') && !gene.includes('-'))
+  const regularGenes = geneNames.filter(gene => !gene.includes('>') && !gene.includes('-') && gene !== 'Core genes present')
   const differenceGenes = geneNames.filter(gene => gene.includes('>') || gene.includes('-'))
-  const activeRegularGenes = activeGenes.filter(gene => !gene.includes('>') && !gene.includes('-'))
+  const activeRegularGenes = activeGenes.filter(gene => !gene.includes('>') && !gene.includes('-') && gene !== 'Core genes present')
   const activeDifferenceGenes = activeGenes.filter(gene => gene.includes('>') || gene.includes('-'))
 
   // Sidebar-only alphabetical ordering (does not change visualization order)
@@ -139,6 +139,21 @@ export function GeneSelectionSidebar({
                         </span>
                       </label>
                     ))}
+                    {/* Core Genes checkbox at the end */}
+                    {geneNames.includes('Core genes present') && (
+                      <label 
+                        key="Core genes present" 
+                        className="flex items-center space-x-1 p-1 rounded hover:bg-gray-50 cursor-pointer group col-span-2"
+                      >
+                        <Checkbox
+                          checked={activeGenes.includes('Core genes present')}
+                          onCheckedChange={() => onToggleGene('Core genes present')}
+                        />
+                        <span className="text-xs font-medium text-gray-700 group-hover:text-gray-900 flex-1 truncate">
+                          Core Genes
+                        </span>
+                      </label>
+                    )}
                   </div>
                 )}
               </CardContent>

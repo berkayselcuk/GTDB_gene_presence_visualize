@@ -74,6 +74,15 @@ export function useGeneVisualization() {
   // Track the first dataset load to avoid showing a taxonomy switching overlay on initial page load
   const isFirstDatasetLoadRef = useRef<boolean>(true);
 
+  // Visualization modes for rug rendering
+  const [rugMode, setRugMode] = useState<'normalized' | 'binary' | 'heatmap'>('binary');
+  const lastRugMinRef = useRef<number>(0);
+  const sizeFilterStateRef = useRef<{ level: TaxonomicLevel | null; threshold: number; baseline: GTDBRecord[] | null }>({
+    level: null,
+    threshold: 0,
+    baseline: null,
+  });
+
   // Currently selected dataset JSON file name
   const [dataset, setDataset] = useState<typeof DATASETS[number]>(DEFAULT_DATASET);
 
@@ -166,6 +175,7 @@ export function useGeneVisualization() {
       const jsonData: GTDBRecord[] = await response.json();
       console.log('GTDB data loaded:', jsonData.length, 'records');
       
+      sizeFilterStateRef.current = { level: null, threshold: 0, baseline: null };
       setState(prev => ({
         ...prev,
         originalRaw: jsonData,
@@ -204,7 +214,7 @@ export function useGeneVisualization() {
         const totalInput = rows.length;
         const geneNames = header.filter(h => h.endsWith('_count'));
         const geneIndex = new Map(geneNames.map((g, i) => [g, i]));
-        const matrix = new Uint8Array(geneNames.length * prev.asmCount);
+        let matrix = new Uint8Array(geneNames.length * prev.asmCount);
         const newCountMap = new Map<string, GeneCountData>();
         
         for (let r = 0; r < rows.length; r++) {
@@ -224,6 +234,44 @@ export function useGeneVisualization() {
           newCountMap.set(asm, cm);
         }
 
+        // Derive a synthetic "Core genes present" count that EXCLUDES specific auxiliary genes
+        // Exclude: FlhE, FlhC, FlhD, FlgQ, FlaF, FlbT, FlgO, FlgP
+        const normalizeName = (s: string) => s.replace(/_count$/, '').toLowerCase();
+        const EXCLUDE_SET = new Set(['flhe','flhc','flhd','flgq','flaf','flbt','flgo','flgp']);
+        const CORE_LABEL = 'Core genes present';
+        let appendedCore = false;
+        {
+          // Compute counts per assembly across all genes NOT in EXCLUDE_SET
+          const keysToCount = geneNames.filter(g => !EXCLUDE_SET.has(normalizeName(g)));
+          if (keysToCount.length > 0) {
+            for (const [asm, cm] of newCountMap.entries()) {
+              let c = 0;
+              for (const k of keysToCount) {
+                if ((cm[k] || 0) > 0) c++;
+              }
+              cm[CORE_LABEL] = c;
+            }
+
+            // Expand matrix by one row (binary presence for core count > 0)
+            const expanded = new Uint8Array((geneNames.length + 1) * prev.asmCount);
+            expanded.set(matrix);
+            // fill last row
+            let aIndex = 0;
+            for (const asm of prev.assemblies) {
+              const cm = newCountMap.get(asm);
+              const present = cm ? (cm[CORE_LABEL] || 0) > 0 : false;
+              expanded[geneNames.length * prev.asmCount + aIndex] = present ? 1 : 0;
+              aIndex++;
+            }
+            matrix = expanded;
+
+            // Append to geneNames and geneIndex
+            geneIndex.set(CORE_LABEL, geneNames.length);
+            geneNames.push(CORE_LABEL);
+            appendedCore = true;
+          }
+        }
+
         return {
           ...prev,
           totalInput,
@@ -241,16 +289,15 @@ export function useGeneVisualization() {
   // Removed separate reapply effect; handled inside dataset change effect above to avoid flashes
 
   const getColorScale = useCallback((level: TaxonomicLevel, categories: string[]) => {
-    // Create a unique cache key that includes the level and sorted categories
+    // Stable website palette (no green), cycling per category
+    const WEBSITE_CATEGORY_COLORS = ['#FCB315','#7CAEC4','#DD6030','#231F20','#7D2985','#B4B4B4'];
     const cacheKey = `${level}_${categories.slice().sort().join('_')}`;
-    
     if (!colorCacheRef.current[cacheKey]) {
-      // Assign colors based on lineage names, not array positions
-      const colors = categories.map(category => getLineageColor(`${level}_${category}`));
+      const colors = categories.map((_, idx) => WEBSITE_CATEGORY_COLORS[idx % WEBSITE_CATEGORY_COLORS.length]);
       colorCacheRef.current[cacheKey] = d3.scaleOrdinal(categories, colors);
     }
     return colorCacheRef.current[cacheKey];
-  }, [getLineageColor]);
+  }, []);
 
   // Update layout when container width changes or assemblies change
   useEffect(() => {
@@ -366,7 +413,7 @@ export function useGeneVisualization() {
     // Remove immediate buildLayout call - let useEffect handle it
   }, []);
 
-  const filterByLineage = useCallback((level: TaxonomicLevel, category: string) => {
+  const filterByLineage = useCallback((level: TaxonomicLevel, category: string, range?: { start: number; end: number }) => {
     setState(prev => ({
       ...prev,
       isLoading: true,
@@ -374,8 +421,10 @@ export function useGeneVisualization() {
     }));
 
     setTimeout(() => {
+      sizeFilterStateRef.current = { level: null, threshold: 0, baseline: null };
       setState(prev => {
-        // Always filter from the full dataset to allow zooming OUT when clicking higher ranks
+        // For parity with newer behavior, a run range may be provided, but since the dataset has no NAs,
+        // we simply filter by category from the full dataset.
         const filtered = prev.originalRaw.filter(d => d[level] === category);
         return {
           ...prev,
@@ -398,9 +447,29 @@ export function useGeneVisualization() {
 
     setTimeout(() => {
       setState(prev => {
-        const counts = d3.rollup(prev.raw, v => v.length, d => d[level]);
-        const filtered = prev.raw.filter(d => (counts.get(d[level]) || 0) >= threshold);
-        
+        const tracker = sizeFilterStateRef.current;
+        const sameLevel = tracker.level === level;
+        const baselineDefined = !!tracker.baseline;
+        const isLoosening = sameLevel && threshold < tracker.threshold;
+
+        if (!sameLevel || !baselineDefined) {
+          tracker.baseline = prev.raw;
+        }
+
+        const baseline = (isLoosening && tracker.baseline) ? tracker.baseline : prev.raw;
+        const counts = d3.rollup(baseline, v => v.length, d => d[level]);
+        const filtered = baseline.filter(d => (counts.get(d[level]) || 0) >= threshold);
+
+        if (threshold <= 0) {
+          sizeFilterStateRef.current = { level: null, threshold: 0, baseline: null };
+        } else {
+          sizeFilterStateRef.current = {
+            level,
+            threshold,
+            baseline: (!sameLevel || !baselineDefined) ? baseline : tracker.baseline,
+          };
+        }
+
         return {
           ...prev,
           raw: filtered,
@@ -413,6 +482,43 @@ export function useGeneVisualization() {
     }, 10);
   }, []);
 
+  // Filter assemblies by requiring that at least one rug (gene row) has count >= min
+  // If the new min is lower than the last applied min, we start from the original dataset;
+  // if it is higher, we filter the current dataset for efficiency, per user request.
+  const filterByRugMin = useCallback((min: number, rugKey: string | 'ANY' = 'ANY') => {
+    setState(prev => ({
+      ...prev,
+      isLoading: true,
+      loadingMessage: `Filtering assemblies by ${rugKey === 'ANY' ? 'any rug' : rugKey} ≥ ${min}...`,
+    }));
+
+    setTimeout(() => {
+      sizeFilterStateRef.current = { level: null, threshold: 0, baseline: null };
+      setState(prev => {
+        const baseline = min < lastRugMinRef.current ? prev.originalRaw : prev.raw;
+        const keys = rugKey === 'ANY'
+          ? (prev.activeGenes.length > 0 ? prev.activeGenes : prev.geneNames)
+          : [rugKey];
+        const filtered = baseline.filter(d => {
+          const cm = prev.countMap.get(d.assembly);
+          if (!cm) return false;
+          for (const k of keys) {
+            if ((cm[k] || 0) >= min) return true;
+          }
+          return false;
+        });
+        lastRugMinRef.current = min;
+        return {
+          ...prev,
+          raw: filtered,
+          assemblies: filtered.map(d => d.assembly),
+          isLoading: false,
+          loadingMessage: '',
+        };
+      });
+    }, 10);
+  }, []);
+
   const resetFilters = useCallback(() => {
     setState(prev => ({
       ...prev,
@@ -421,6 +527,7 @@ export function useGeneVisualization() {
     }));
 
     setTimeout(() => {
+      sizeFilterStateRef.current = { level: null, threshold: 0, baseline: null };
       setState(prev => ({
         ...prev,
         raw: prev.originalRaw.slice(),
@@ -569,6 +676,7 @@ export function useGeneVisualization() {
     }));
 
     setTimeout(() => {
+      sizeFilterStateRef.current = { level: null, threshold: 0, baseline: null };
       setState(prev => {
         const filtered = prev.raw.filter(d => {
           const cm = prev.countMap.get(d.assembly);
@@ -597,6 +705,7 @@ export function useGeneVisualization() {
     }));
 
     setTimeout(() => {
+      sizeFilterStateRef.current = { level: null, threshold: 0, baseline: null };
       setState(prev => {
         const level = ALL_LEVELS.find(l => 
           prev.originalRaw.some(d => d[l] === searchTerm)
@@ -633,6 +742,7 @@ export function useGeneVisualization() {
     setNormalizeLevel,
     filterByLineage,
     filterBySize,
+    filterByRugMin,
     resetFilters,
     toggleGeneSelection,
     toggleAllGenes,
@@ -655,5 +765,7 @@ export function useGeneVisualization() {
     datasetLabels: DATASET_LABELS,
     setDataset,
     taxonomy,
+    rugMode,
+    setRugMode,
   };
 } 

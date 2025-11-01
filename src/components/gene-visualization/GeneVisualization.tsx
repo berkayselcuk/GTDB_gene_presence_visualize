@@ -31,6 +31,7 @@ export function GeneVisualization() {
     setNormalizeLevel,
     filterByLineage,
     filterBySize,
+    filterByRugMin,
     resetFilters,
     toggleGeneSelection,
     toggleAllGenes,
@@ -45,6 +46,8 @@ export function GeneVisualization() {
     setDataset,
     taxonomy,
     datasetLabels,
+    rugMode,
+    setRugMode,
   } = useGeneVisualization()
 
   const handleFileUpload = () => {
@@ -112,12 +115,15 @@ export function GeneVisualization() {
           onNormalizeLevel={setNormalizeLevel}
           onFilterAssemblies={filterAllZeroAssemblies}
           onFilterBySize={filterBySize}
+          onFilterByRugMin={filterByRugMin}
           datasetOptions={datasets}
           selectedDataset={dataset}
           onDatasetChange={(d) => setDataset(d as unknown as typeof datasets[number])}
           datasetLabels={datasetLabels}
           SearchLineageInput={SearchLineageInput}
           mode="all"
+          rugMode={rugMode}
+          onRugModeChange={setRugMode}
         />
       </div>
 
@@ -202,6 +208,7 @@ export function GeneVisualization() {
                     onDomainClick={resetFilters}
                     onWidthChange={onWidthChange}
                     getColorScale={getColorScale}
+                    rugMode={rugMode}
                   />
                   )}
                 </div>
