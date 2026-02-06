@@ -212,20 +212,31 @@ export function useGeneVisualization() {
         const rows = lines.filter(Boolean);
         
         const totalInput = rows.length;
-        const geneNames = header.filter(h => h.endsWith('_count'));
+        // Identify columns by header name rather than assuming fixed positions.
+        // - Assembly column is preferred by name ('assembly'); fallback to column 0.
+        // - Gene columns are any header ending with '_count', regardless of where they are.
+        const assemblyColIdx = Math.max(0, header.indexOf('assembly'));
+        const countCols = header
+          .map((name, idx) => ({ name, idx }))
+          .filter(({ name, idx }) => idx !== assemblyColIdx && name.endsWith('_count'));
+
+        const geneNames = countCols.map(c => c.name);
+        const geneColIdxs = countCols.map(c => c.idx);
         const geneIndex = new Map(geneNames.map((g, i) => [g, i]));
         let matrix = new Uint8Array(geneNames.length * prev.asmCount);
         const newCountMap = new Map<string, GeneCountData>();
         
         for (let r = 0; r < rows.length; r++) {
           const cols = rows[r].split('\t');
-          const asm = cols[0];
+          const asm = cols[assemblyColIdx] ?? cols[0];
           const asmIdx = prev.asmIndex.get(asm);
           if (asmIdx === undefined) continue;
           
           const cm: GeneCountData = {};
           for (let g = 0; g < geneNames.length; g++) {
-            const val = Number(cols[1 + g]) || 0;
+            const colIdx = geneColIdxs[g];
+            const raw = colIdx < cols.length ? cols[colIdx] : undefined;
+            const val = Number(raw) || 0;
             cm[geneNames[g]] = val;
             if (val > 0) {
               matrix[g * prev.asmCount + asmIdx] = 1;
