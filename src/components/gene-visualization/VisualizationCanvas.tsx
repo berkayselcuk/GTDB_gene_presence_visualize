@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import * as d3 from 'd3';
-import { Upload, Database, MousePointer } from 'lucide-react';
+import { Upload, Database, MousePointer, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +23,7 @@ interface VisualizationCanvasProps {
   onWidthChange?: (width: number) => void;
   getColorScale: (level: TaxonomicLevel, categories: string[]) => d3.ScaleOrdinal<string, string>;
   rugMode?: 'binary' | 'normalized' | 'heatmap';
+  onDownloadTSV?: () => void;
 }
 
 export type VisualizationCanvasHandle = {
@@ -82,6 +83,7 @@ export const VisualizationCanvas = forwardRef<VisualizationCanvasHandle, Visuali
   onWidthChange,
   getColorScale,
   rugMode = 'binary',
+  onDownloadTSV,
 }: VisualizationCanvasProps,
 ref
 ) {
@@ -888,6 +890,12 @@ ref
           <Button size="sm" onClick={downloadSVG}>
             Download SVG
           </Button>
+          {onDownloadTSV && (
+            <Button size="sm" variant="outline" onClick={onDownloadTSV}>
+              <Download className="w-3 h-3 mr-1.5" />
+              Download TSV
+            </Button>
+          )}
           {activeGenes.length > 0 && (
             <Badge variant="secondary" className="bg-blue-100 text-blue-800">
               {activeGenes.length} genes visualized

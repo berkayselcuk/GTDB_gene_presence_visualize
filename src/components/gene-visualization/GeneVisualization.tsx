@@ -68,6 +68,50 @@ export function GeneVisualization() {
     input.click()
   }
 
+  const handleDownloadFilteredData = () => {
+    // Check if data is available
+    if (state.raw.length === 0 || state.geneNames.length === 0) {
+      alert('No data available to download. Please load a TSV file first.')
+      return
+    }
+
+    // Create TSV header: assembly + gene count columns
+    const header = ['assembly', ...state.geneNames].join('\t')
+    
+    // Create TSV rows
+    const rows = state.raw.map(record => {
+      const assembly = record.assembly
+      const counts = state.countMap.get(assembly)
+      
+      // Get count values for each gene
+      const geneValues = state.geneNames.map(geneName => {
+        return counts?.[geneName] ?? 0
+      })
+      
+      return [assembly, ...geneValues].join('\t')
+    })
+    
+    // Combine header and rows
+    const tsvContent = [header, ...rows].join('\n')
+    
+    // Create blob and download
+    const blob = new Blob([tsvContent], { type: 'text/tab-separated-values;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    
+    // Generate filename with timestamp
+    const timestamp = new Date().toISOString().split('T')[0]
+    const filename = `filtered_gene_counts_${timestamp}.tsv`
+    
+    link.setAttribute('href', url)
+    link.setAttribute('download', filename)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
   // Calculate coverage percentages
   const inputCoverage = state.totalInput > 0 ? ((state.countMap.size / state.totalInput) * 100).toFixed(1) : '0.0'
   const gtdbCoverage = state.asmCount > 0 ? ((state.countMap.size / state.asmCount) * 100).toFixed(1) : '0.0'
@@ -209,6 +253,7 @@ export function GeneVisualization() {
                     onWidthChange={onWidthChange}
                     getColorScale={getColorScale}
                     rugMode={rugMode}
+                    onDownloadTSV={handleDownloadFilteredData}
                   />
                   )}
                 </div>
