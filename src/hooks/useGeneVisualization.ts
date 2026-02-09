@@ -24,7 +24,7 @@ const DATASETS = [
 const DEFAULT_DATASET = DATASETS[0];
 
 // Optional default TSV to auto-load on first initialization (from public/)
-const DEFAULT_TSV_FILENAME = 'flagellar_genes_phyletic_distribution_22-08-2025_ordered.tsv';
+const DEFAULT_TSV_FILENAME = 'flagellar_genes_phyletic_distribution_withIDs_Feb8_2026.tsv';
 
 // Custom labels to show in the UI for each dataset
 const DATASET_LABELS: Record<typeof DATASETS[number], string> = {
